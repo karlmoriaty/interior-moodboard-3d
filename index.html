@@ -1,0 +1,106 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>房间情绪板 · 把材料拖进屋子里</title>
+<meta name="description" content="把木料、石头、织物和涂料拖进一个剖开的房间，搬动家具，拉动太阳。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23f2ece3'/%3E%3Crect x='7' y='13' width='8' height='12' rx='1.5' fill='%23b8623c'/%3E%3Crect x='18' y='8' width='7' height='17' rx='1.5' fill='%238c8377'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">
+{ "imports": { "three": "./vendor/three.module.js" } }
+</script>
+</head>
+<body data-time="evening">
+
+<canvas id="stage"></canvas>
+<div class="wash" aria-hidden="true"><i></i><i></i><i></i></div>
+<div class="arch" aria-hidden="true"></div>
+<div class="grain" aria-hidden="true"></div>
+
+<div class="left">
+  <header class="brand">
+    <span class="eyebrow">室内 · 情绪板 / 01</span>
+    <h1>房间情绪板</h1>
+    <p>把样本拖进屋子里的任何一个面：地面、墙、沙发、地毯、木作。家具可以搬，太阳可以拉——这三样决定了房间的情绪。</p>
+    <div class="colophon" aria-hidden="true">
+      <span>材料研究 / MATERIAL STUDY</span>
+      <span>NO. 01 — 06</span>
+    </div>
+  </header>
+
+  <section class="panel feel" aria-label="情绪">
+    <div class="panel-head"><span>情绪预设</span><i id="feel-name">偏暖</i></div>
+    <div class="moods" id="moods">
+      <button class="mood" data-m="warm"   aria-pressed="true"><b>暖光</b><small>低角度金光</small></button>
+      <button class="mood" data-m="clear"  aria-pressed="false"><b>清亮</b><small>正午白石</small></button>
+      <button class="mood" data-m="quiet"  aria-pressed="false"><b>沉静</b><small>夜里只有灯</small></button>
+    </div>
+    <div class="meter" id="meter">
+      <div class="row" data-k="warm"><i>暖</i><b>—</b><u><span></span></u></div>
+      <div class="row" data-k="bright"><i>亮</i><b>—</b><u><span></span></u></div>
+      <div class="row" data-k="quiet"><i>静</i><b>—</b><u><span></span></u></div>
+    </div>
+    <p class="verdict" id="verdict" aria-live="polite"></p>
+  </section>
+
+  <section class="panel board" aria-label="当前表面">
+    <div class="panel-head"><span>房间表面</span><i>点一下定位</i></div>
+    <div class="slots" id="slots"></div>
+  </section>
+</div>
+
+<section class="panel tray" id="tray" aria-label="样本">
+  <div class="tabs" id="tabs" role="tablist">
+    <button data-t="wood" class="on" role="tab" aria-selected="true">木</button>
+    <button data-t="stone" role="tab" aria-selected="false">石</button>
+    <button data-t="fabric" role="tab" aria-selected="false">织物</button>
+    <button data-t="paint" role="tab" aria-selected="false">涂料</button>
+    <span class="rule"></span>
+    <button data-t="furniture" role="tab" aria-selected="false">家具</button>
+  </div>
+  <div class="cards" id="cards"></div>
+</section>
+
+<aside class="clock" aria-label="一天里的光">
+  <div class="clock-head"><span>光</span><b id="clock-time">18:30</b></div>
+  <div class="rail" id="rail" role="slider" tabindex="0" aria-label="时间" aria-valuemin="6" aria-valuemax="23" aria-valuenow="18.5">
+    <div class="rail-line"></div>
+    <div class="rail-fill" id="rail-fill"></div>
+    <div class="rail-knob" id="rail-knob"></div>
+    <div class="ticks">
+      <button data-h="6.6">黎明</button>
+      <button data-h="12.6">正午</button>
+      <button data-h="18.5">傍晚</button>
+      <button data-h="22.4">夜</button>
+    </div>
+  </div>
+</aside>
+
+<footer class="tools">
+  <button id="undo" title="撤销 (Ctrl+Z)" disabled>撤销</button>
+  <button id="redo" title="重做 (Ctrl+Shift+Z)" disabled>重做</button>
+  <span class="rule"></span>
+  <button id="shot" title="存成图片">存图</button>
+  <button id="share" title="复制这间房的链接">复制链接</button>
+  <button id="reset" title="回到初始状态">重置</button>
+  <button id="help-btn" title="怎么用">?</button>
+</footer>
+
+<div id="ghost-hint" aria-hidden="true"></div>
+
+<dialog id="help">
+  <button class="close" id="help-close" aria-label="关闭">×</button>
+  <h2>这块板子怎么用</h2>
+  <p><b>样本。</b>从底部抽屉里拖一块样本，放到屋子里的任意一个面上。木头只上地面和木作，石头只上地面和墙，织物只上沙发和地毯，涂料只上墙。拖到哪个面上，那个面会微微亮一下，松手就铺满。也可以先点一个面，再点样本。</p>
+  <p><b>家具。</b>在“家具”标签里拖一件进屋——卡片上就是这件家具本身。屋子里的家具也能直接拖，落点对齐到 10 厘米的格子，按占地夹在墙内。</p>
+  <p><b>光。</b>右侧那根竖线就是一天：往上拉是清晨，往下拉是深夜。太阳的角度、颜色和整个房间的亮度都跟着它走，天黑以后灯会自动亮。</p>
+  <p><b>读数。</b>左边三个数是这间房此刻的脾气。<b>亮</b>来自浅色表面和天光，<b>暖</b>来自暖色材料和低角度的光，<b>静</b>来自深色表面和一小片灯光。它们只是参考，多数房间是三样混着的。</p>
+  <p><b>视角。</b>左键拖动绕着屋子转，即时跟手、松手即停，这样转完就能直接点面或拖家具。滚轮平滑拉近拉远。按住<kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd>可以在房间里挪动观察位置（左右横移、上下升降），范围有限不会穿墙。按 <kbd>R</kbd> 回到默认视角。</p>
+  <p class="keys">快捷键：<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 换情绪 · <kbd>[</kbd><kbd>]</kbd> 拨时间 · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销 · <kbd>R</kbd> 回到默认视角 · 方向键挪动视角 · 焦点在时间轴上时上下键仍拨时间</p>
+  <p class="keys">画面经过电影级后期：亮部辉光、ACES 色调映射、暗角与胶片颗粒。加 <code>?nopost=1</code> 可关闭后期作对照。</p>
+</dialog>
+
+<script type="module" src="./app.js"></script>
+</body>
+</html>

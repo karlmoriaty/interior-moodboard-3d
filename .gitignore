@@ -1,0 +1,19 @@
+# 依赖与构建产物说明
+# vendor/ 里的 three.js 是运行时依赖，必须提交（源码版靠它跑起来）
+
+# 临时文件与工具目录
+.tmp/
+*.bak
+_*.js
+_*.html
+
+# 系统与编辑器
+.DS_Store
+Thumbs.db
+desktop.ini
+.vscode/
+.idea/
+
+# 日志
+*.log
+npm-debug.log*
