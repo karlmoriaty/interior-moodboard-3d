@@ -1081,8 +1081,209 @@ function cementRough() {
   t.anisotropy = 8;
   return t;
 }
-const floorTex = cementFloor('#26262a');
-const floorRough = cementRough();
+/* 抛光木地板：参考图里地面是整个空间的反光底，必须有长条拼板 + 强反射。
+   板缝是唯一允许的直线；其余交给低粗糙度和环境反射。 */
+function plankFloor(colorA, colorB) {
+  const S = 1024;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = colorA;
+  g.fillRect(0, 0, S, S);
+  let seed = 137;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rows = 7;
+  const hgt = S / rows;
+  for (let r = 0; r < rows; r++) {
+    const y = r * hgt;
+    g.fillStyle = r % 2 ? colorB : colorA;
+    g.fillRect(0, y, S, hgt);
+    /* 木纹：沿板长的细线 */
+    for (let i = 0; i < 34; i++) {
+      const yy = y + 4 + rnd() * (hgt - 8);
+      const amp = 0.6 + rnd() * 2.2;
+      const ph = rnd() * 6.28;
+      g.strokeStyle = `rgba(0,0,0,${(0.05 + rnd() * 0.12).toFixed(3)})`;
+      g.lineWidth = 0.5 + rnd() * 1.2;
+      g.beginPath();
+      for (let x = 0; x <= S; x += 16) {
+        const off = Math.sin(x * 0.02 + ph) * amp;
+        if (x === 0) g.moveTo(x, yy + off); else g.lineTo(x, yy + off);
+      }
+      g.stroke();
+    }
+    /* 板缝：横向深色一条 + 随机端缝 */
+    g.fillStyle = 'rgba(0,0,0,.55)';
+    g.fillRect(0, y, S, 2.5);
+    g.fillStyle = 'rgba(0,0,0,.42)';
+    g.fillRect((r % 2 ? 0.32 : 0.68) * S + rnd() * 40, y, 2, hgt);
+    /* 上缘一道极淡高光，板才有厚度 */
+    g.fillStyle = 'rgba(255,225,190,.05)';
+    g.fillRect(0, y + 2.5, S, 1.4);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(3.4, 3.0);
+  t.anisotropy = 8;
+  return t;
+}
+
+/* 地板粗糙度：整体很滑（低值=强反射），只在板缝处粗糙一点 */
+function plankRough() {
+  const S = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  /* 底色必须偏亮：roughnessMap 是与材质 roughness 相乘的。
+     底色 0.23 乘以 0.26 只剩 0.06 —— 地板接近全镜面，
+     吊灯会在地上摊成一颗锐利的小圆球（实测就是画面里那个"悬浮光球"）。 */
+  g.fillStyle = '#c8c8c8';
+  g.fillRect(0, 0, S, S);
+  let seed = 211;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const rows = 7;
+  const hgt = S / rows;
+  for (let r = 0; r < rows; r++) {
+    const y = r * hgt;
+    /* 每块板的滑度略有差异：整片一致会像镜子，太假 */
+    g.fillStyle = `rgba(${Math.round(150 + rnd() * 60)},${Math.round(150 + rnd() * 60)},${Math.round(150 + rnd() * 60)},.45)`;
+    g.fillRect(0, y, S, hgt);
+    g.fillStyle = 'rgba(235,235,235,.9)';   // 板缝更粗糙
+    g.fillRect(0, y, S, 2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(3.4, 3.0);   // 必须与颜色贴图一致
+  t.anisotropy = 8;
+  return t;
+}
+
+/* 障子纸：半透的暖白纸面，带极淡的纤维与竖向木骨。
+   参考图里障子是整面发光的背景板，纸本身要有"透光"的层次而不是一块白板。 */
+function shojiPaper() {
+  const W2 = 512, H2 = 512;
+  const c = document.createElement('canvas');
+  c.width = W2; c.height = H2;
+  const g = c.getContext('2d');
+  const grd = g.createLinearGradient(0, 0, 0, H2);
+  grd.addColorStop(0, '#efe6d4');
+  grd.addColorStop(0.5, '#e6dbc6');
+  grd.addColorStop(1, '#d9ccb4');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, W2, H2);
+  let seed = 313;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  /* 纸纤维 */
+  for (let i = 0; i < 620; i++) {
+    const x = rnd() * W2, y = rnd() * H2;
+    const len = 6 + rnd() * 26;
+    const vert = rnd() > 0.7;
+    g.strokeStyle = `rgba(${rnd() > 0.5 ? 255 : 150},${rnd() > 0.5 ? 245 : 140},${rnd() > 0.5 ? 225 : 120},${(0.05 + rnd() * 0.09).toFixed(3)})`;
+    g.lineWidth = 0.6 + rnd();
+    g.beginPath();
+    g.moveTo(x, y);
+    g.lineTo(vert ? x + rnd() * 3 : x + len, vert ? y + len : y + rnd() * 3);
+    g.stroke();
+  }
+  /* 木骨：竖向细条（横条由几何体单独做，纸只负责竖骨） */
+  for (let i = 1; i < 4; i++) {
+    const x = (W2 * i) / 4;
+    g.fillStyle = 'rgba(52,38,26,.34)';
+    g.fillRect(x - 2.5, 0, 5, H2);
+    g.fillStyle = 'rgba(255,246,228,.16)';
+    g.fillRect(x + 2.5, 0, 1.2, H2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/* 竹帘（簾）：横向细竹 + 竖向吊绳，半透。挂在窗顶做和风的第一层。 */
+function sudareTex() {
+  const W2 = 512, H2 = 512;
+  const c = document.createElement('canvas');
+  c.width = W2; c.height = H2;
+  const g = c.getContext('2d');
+  g.clearRect(0, 0, W2, H2);
+  let seed = 97;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  const gap = 9;
+  for (let y = 0; y < H2; y += gap) {
+    const shade = 0.55 + rnd() * 0.4;
+    g.fillStyle = `rgba(${Math.round(120 * shade)},${Math.round(96 * shade)},${Math.round(58 * shade)},.92)`;
+    g.fillRect(0, y, W2, gap - 2.2);
+    g.fillStyle = 'rgba(255,232,190,.10)';
+    g.fillRect(0, y, W2, 1);
+    g.fillStyle = 'rgba(0,0,0,.30)';
+    g.fillRect(0, y + gap - 2.6, W2, 1);
+  }
+  /* 竖向吊绳 */
+  for (let i = 1; i < 6; i++) {
+    g.fillStyle = 'rgba(38,32,24,.72)';
+    g.fillRect((W2 * i) / 6, 0, 2.4, H2);
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  return t;
+}
+
+/* 地面：和风改造后从「深色微水泥」换成「深色抛光木地板」。
+   参考图里地面是整间房的反光底——低频长反光、板缝清晰、能映出灯和窗。
+   所以粗糙度压到 0.16（水泥是 0.62），并保留粗糙度贴图让反光一块块不均匀。 */
+/* 榻榻米：蔺草编织的横向细密纹 + 每块席四周的深色布边。
+   参考图里地面就是一大片榻榻米，草的横纹比木纹更"软"，也压得住深色房间。 */
+function tatamiTex() {
+  const S = 512;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#8d8560';
+  g.fillRect(0, 0, S, S);
+  let seed = 53;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  /* 草茎：横向密排，每根略有色差 */
+  const step = 4;
+  for (let y = 0; y < S; y += step) {
+    const t = 0.82 + rnd() * 0.3;
+    g.fillStyle = `rgb(${Math.round(141 * t)},${Math.round(133 * t)},${Math.round(96 * t)})`;
+    g.fillRect(0, y, S, step - 1);
+    g.fillStyle = 'rgba(0,0,0,.10)';
+    g.fillRect(0, y + step - 1, S, 1);
+    /* 草节：少量短横线 */
+    if (rnd() > 0.86) {
+      g.fillStyle = 'rgba(0,0,0,.18)';
+      g.fillRect(rnd() * S, y, 10 + rnd() * 26, 1.4);
+    }
+  }
+  /* 竖向编织压痕 */
+  for (let i = 0; i < 60; i++) {
+    const x = rnd() * S;
+    g.fillStyle = `rgba(255,246,214,${(0.03 + rnd() * 0.05).toFixed(3)})`;
+    g.fillRect(x, 0, 1 + rnd() * 2, S);
+  }
+  /* 席边：深藏青布边 */
+  const band = 26;
+  g.fillStyle = '#2b3226';
+  g.fillRect(0, 0, S, band);
+  g.fillRect(0, S - band, S, band);
+  g.fillRect(0, 0, band, S);
+  g.fillRect(S - band, 0, band, S);
+  g.fillStyle = 'rgba(255,255,255,.05)';
+  g.fillRect(0, band, S, 2);
+  g.fillRect(0, S - band - 2, S, 2);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(1.6, 1.2);
+  t.anisotropy = 8;
+  return t;
+}
+
+const floorTex = plankFloor('#3b2e23', '#332820');
+const floorRough = plankRough();
 /* 桌面比地面亮"半档"就够：亮一整档会让它成为画面最亮的块，抢走模型台。
    分层靠的是模型台(暖亮) > 桌面(中深) > 地毯(深) > 地面(深)这条明度链。 */
 const tableTex = woodGrain('#4e3c2c', 0.10);
@@ -1092,10 +1293,12 @@ tableTex.repeat.set(3, 2);
    roughness 0.30 → 0.52，把高光摊开成柔和渐变。 */
 const TABLE_ROUGHNESS = 0.52;
 
-/* 地面：深色微水泥，低粗糙度的地方带一点反光——夜里才像"浇过的地坪" */
+/* 地面材质：抛光木地板。roughness 0.16 会在地板上打出一块又小又圆的镜面光斑
+   （实测桌左侧那颗"悬浮光球"就是嵌灯的镜面高光）；0.26 把高光摊成长条，
+   才是打过蜡的木地板该有的反光形状。 */
 const floorMat = new THREE.MeshStandardMaterial({
-  map: floorTex, roughnessMap: floorRough, roughness: 0.62, metalness: 0.10,
-  emissive: 0x121114, emissiveIntensity: 0.5,
+  map: floorTex, roughnessMap: floorRough, roughness: 0.42, metalness: 0.10,
+  emissive: 0x241a12, emissiveIntensity: 0.6, envMapIntensity: 0.6,
 });
 /* 地板比房间每边多出 0.1，避免边界处露出缝 */
 const floor = new THREE.Mesh(new THREE.PlaneGeometry(11.4, 10.2), floorMat);
@@ -1222,11 +1425,17 @@ wallPanel(winW, INTERIOR.ceilY - INTERIOR.winTop, 0, (INTERIOR.ceilY + INTERIOR.
    所有构件用 apt 前缀，避免与一层的同名变量冲突。 */
 /* 大平层尺度：8.0（宽）× 7.1（深）× 3.05（层高）≈ 57 m²，深色现代客厅。 */
 const APT = { halfW: APT_HALF_W, frontZ: APT_FRONT_Z, backZ: INTERIOR.winZ, ceilY: INTERIOR.ceilY };
-/* 深色现代配色：炭灰墙、近黑金属、深色木作、极少量黄铜。
+/* 和风改造后的配色：深胡桃木护墙板、近黑铁件、障子纸、竹、以及一根红霓虹。
    二层材质带一点自发光基调：夜里全局环境只剩 0.055，深色墙不补底色会全黑。
    强度接在 setHour() 上，白天自动收掉。 */
-const aptWallMat = new THREE.MeshStandardMaterial({ color: 0x35363b, roughness: 0.94, metalness: 0.02, emissive: 0x17181c, emissiveIntensity: 0.85 });
-const aptTrimMat = new THREE.MeshStandardMaterial({ color: 0x0e0f11, roughness: 0.55, metalness: 0.35, emissive: 0x0a0a0c, emissiveIntensity: 0.5 });
+/* 墙面：竖向木纹护墙板。参考图里墙是木的，靠板缝和微弱反光读出层次。 */
+const aptPanelTex = woodGrain('#3a2c22', 0.14);
+aptPanelTex.repeat.set(4.5, 0.9);
+const aptWallMat = new THREE.MeshStandardMaterial({
+  map: aptPanelTex, color: 0x9c8168, roughness: 0.86, metalness: 0.05,
+  emissive: 0x1b1310, emissiveIntensity: 0.85,
+});
+const aptTrimMat = new THREE.MeshStandardMaterial({ color: 0x0e0c0a, roughness: 0.55, metalness: 0.35, emissive: 0x0a0806, emissiveIntensity: 0.5 });
 const aptWoodMat = new THREE.MeshStandardMaterial({ map: tableTex, color: 0xa08a72, roughness: 0.46, metalness: 0.05, emissive: 0x1a1410, emissiveIntensity: 0.55 });
 const aptDarkMat = new THREE.MeshStandardMaterial({ color: 0x17181b, roughness: 0.48, metalness: 0.4, emissive: 0x0b0b0d, emissiveIntensity: 0.4 });
 /* 黄铜：深色空间里唯一的暖色金属，只用在把手、灯槽这种小面积 */
@@ -1338,20 +1547,94 @@ const aptCove = new THREE.Mesh(
 aptCove.position.set(0, INTERIOR.winTop + 0.06, INTERIOR.winZ + 0.22);
 scene.add(aptCove);
 
-/* 地毯：跟着房间尺度放大到 5.4 × 3.9，但仍收在桌凳区，不铺满整间。
-   深灰羊毛；深色空间里地毯要略浅一档，否则桌腿和地面糊成一片。 */
-const aptRugMat = new THREE.MeshStandardMaterial({ color: 0x2c2d31, roughness: 0.99, metalness: 0, emissive: 0x141416, emissiveIntensity: 0.5 });
-const aptRug = new THREE.Mesh(new THREE.PlaneGeometry(5.4, 3.9), aptRugMat);
+/* 榻榻米：只做桌前一坪（2.9 × 1.6），铺在矮凳与茶台下面。
+   参考图里草席是局部的小垫，主地面始终是抛光木地板——
+   一开始铺了 5.6×4.0，把整片反光地板盖死，地面立刻变哑光。 */
+const aptRugMat = new THREE.MeshStandardMaterial({
+  map: tatamiTex(), roughness: 0.92, metalness: 0,
+  emissive: 0x24241a, emissiveIntensity: 0.5,
+});
+const aptRug = new THREE.Mesh(new THREE.PlaneGeometry(2.9, 1.6), aptRugMat);
 aptRug.rotation.x = -Math.PI / 2;
-aptRug.position.set(0, 0.008, -0.85);
+aptRug.position.set(0.05, 0.010, 1.05);
 aptRug.receiveShadow = true;
 scene.add(aptRug);
-const aptRugEdgeMat = new THREE.MeshStandardMaterial({ color: 0x222327, roughness: 0.99, emissive: 0x101012, emissiveIntensity: 0.5 });
-const aptRugEdge = new THREE.Mesh(new THREE.PlaneGeometry(5.5, 4.0), aptRugEdgeMat);
-aptRugEdge.rotation.x = -Math.PI / 2;
-aptRugEdge.position.set(0, 0.005, -0.85);
+/* 席下垫一层薄木框，榻榻米才有"放在地板上的厚度"，不会像贴纸 */
+const aptRugEdgeMat = new THREE.MeshStandardMaterial({ color: 0x241d16, roughness: 0.86, emissive: 0x140f0b, emissiveIntensity: 0.5 });
+const aptRugEdge = new THREE.Mesh(new THREE.BoxGeometry(3.02, 0.02, 1.72), aptRugEdgeMat);
+aptRugEdge.position.set(0.05, 0.005, 1.05);
+aptRugEdge.receiveShadow = true;
 scene.add(aptRugEdge);
 aptGlowMats.push(aptRugMat, aptRugEdgeMat, floorMat);
+
+/* ---------- 窗边抬高平台（縁側）：参考图里的核心构造 ---------- */
+/* 整块木台抬到 0.22 m，前沿做一道 45 mm 的深色收边，坐垫摆在台上。
+   它把"窗外"和"室内"之间加了一层过渡，视线走过去先经过台面再到城市。 */
+const engawaMat = new THREE.MeshStandardMaterial({
+  map: plankFloor('#4a3627', '#3d2c1f'), roughness: 0.30, metalness: 0.10,
+  emissive: 0x241a10, emissiveIntensity: 0.62, envMapIntensity: 0.5,
+});
+const ENGAWA = { h: 0.22, depth: 1.7, z: INTERIOR.winZ + 0.85 };
+const aptNoseGlow = new THREE.Mesh(
+  new THREE.BoxGeometry(APT.halfW * 2 - 0.6, 0.012, 0.03),
+  new THREE.MeshBasicMaterial({ color: 0xffcf9a, transparent: true, opacity: 0, toneMapped: false }),
+);
+{
+  const deck = new THREE.Mesh(
+    new THREE.BoxGeometry(APT.halfW * 2 - 0.5, ENGAWA.h, ENGAWA.depth), engawaMat,
+  );
+  deck.position.set(0, ENGAWA.h / 2, ENGAWA.z);
+  deck.castShadow = true;
+  deck.receiveShadow = true;
+  scene.add(deck);
+  /* 前沿收边：深色压一道，台面才有厚度 */
+  const nose = new THREE.Mesh(
+    new THREE.BoxGeometry(APT.halfW * 2 - 0.5, 0.045, 0.06), aptTrimMat,
+  );
+  nose.position.set(0, ENGAWA.h - 0.022, ENGAWA.z + ENGAWA.depth / 2 + 0.03);
+  scene.add(nose);
+  /* 台面灯槽：沿收边一条极淡的暖光，把台沿"抬"起来 */
+  aptNoseGlow.position.set(0, ENGAWA.h - 0.05, ENGAWA.z + ENGAWA.depth / 2 + 0.05);
+  scene.add(aptNoseGlow);
+}
+
+/* 台上坐垫：两只方垫，布面朝上，是"可以坐在这里看城市"的唯一提示 */
+const cushionTex = (() => {
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#6f7362';
+  g.fillRect(0, 0, S, S);
+  let seed = 31;
+  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+  for (let i = 0; i < 900; i++) {
+    g.fillStyle = `rgba(${rnd() > 0.5 ? 255 : 40},${rnd() > 0.5 ? 250 : 46},${rnd() > 0.5 ? 230 : 40},${(0.03 + rnd() * 0.06).toFixed(3)})`;
+    g.fillRect(rnd() * S, rnd() * S, 2, 2);
+  }
+  /* 中央一道压痕，坐垫才有"被坐过"的软度 */
+  const grd = g.createRadialGradient(S / 2, S / 2, 10, S / 2, S / 2, S * 0.52);
+  grd.addColorStop(0, 'rgba(0,0,0,.16)');
+  grd.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, S, S);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const cushionMat = new THREE.MeshStandardMaterial({
+  map: cushionTex, roughness: 0.96, metalness: 0,
+  emissive: 0x1c1d16, emissiveIntensity: 0.42,
+});
+aptGlowMats.push(cushionMat);
+for (const dx of [-1.5, 0.05, 1.6]) {
+  const cu = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.10, 0.62), cushionMat);
+  cu.position.set(dx, ENGAWA.h + 0.05, ENGAWA.z - 0.15);
+  cu.rotation.y = (dx * 0.06);
+  cu.castShadow = true;
+  cu.receiveShadow = true;
+  scene.add(cu);
+}
 
 /* 模型台下的一圈细光：标出"这是房间里的一处展示位" */
 const aptPlinthGlow = new THREE.Mesh(
@@ -1409,19 +1692,64 @@ for (let i = 0; i < 2; i++) {
   scene.add(bk);
 }
 
-/* 桌前一条矮凳：坐在这儿看模型台。它解释了这张桌子为什么摆在这个位置，
-   也把前景那片空地填掉——一间房里不会有"没用的空地毯"。
-   深色木面 + 黑钢腿，坐高 0.44（现代家具比传统凳子略高）。 */
-const benchSeat = new THREE.Mesh(new THREE.BoxGeometry(1.9, 0.05, 0.44), aptWoodMat);
-benchSeat.position.set(0.2, 0.44, 0.55);
-benchSeat.castShadow = true;
-benchSeat.receiveShadow = true;
-scene.add(benchSeat);
-for (const dx of [-0.82, 0.82]) for (const dz of [-0.16, 0.16]) {
-  const leg = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.42, 0.03), aptDarkMat);
-  leg.position.set(0.2 + dx, 0.21, 0.55 + dz);
-  leg.castShadow = true;
-  scene.add(leg);
+/* 桌前两张贴地矮凳 + 坐垫：参考图里的凳子压得极低（坐高 0.30），
+   人不坐椅子而盘腿/侧坐，视线更低，房间才显得高。
+   深色木框 + 浅色坐垫，坐垫和縁側台上的同一套布。 */
+const lowBenchMat = new THREE.MeshStandardMaterial({
+  map: tableTex, color: 0x8a7259, roughness: 0.52, metalness: 0.04,
+  emissive: 0x181009, emissiveIntensity: 0.5,
+});
+aptGlowMats.push(lowBenchMat);
+for (const [bx, bz, bw2] of [[-1.15, 0.62, 1.7], [1.25, 0.62, 1.7]]) {
+  /* 凳面 */
+  const seat = new THREE.Mesh(new THREE.BoxGeometry(bw2, 0.07, 0.52), lowBenchMat);
+  seat.position.set(bx, 0.30, bz);
+  seat.castShadow = true;
+  seat.receiveShadow = true;
+  scene.add(seat);
+  /* 四条短腿：只露 0.10，贴地感 */
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.235, 0.05), aptTrimMat);
+    leg.position.set(bx + sx * (bw2 / 2 - 0.09), 0.1175, bz + sz * 0.18);
+    leg.castShadow = true;
+    scene.add(leg);
+  }
+  /* 坐垫：比凳面小一圈，压出一点厚度 */
+  const pad = new THREE.Mesh(new THREE.BoxGeometry(bw2 - 0.16, 0.075, 0.42), cushionMat);
+  pad.position.set(bx, 0.372, bz);
+  pad.castShadow = true;
+  pad.receiveShadow = true;
+  scene.add(pad);
+}
+
+/* 矮茶台：放在两张凳子中间，是参考图里"围坐"关系的落点 */
+{
+  const trayTop = new THREE.Mesh(new THREE.BoxGeometry(0.86, 0.045, 0.5), lowBenchMat);
+  trayTop.position.set(0.15, 0.34, 1.5);
+  trayTop.castShadow = true;
+  trayTop.receiveShadow = true;
+  scene.add(trayTop);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.32, 0.04), aptTrimMat);
+    leg.position.set(0.15 + sx * 0.34, 0.16, 1.5 + sz * 0.18);
+    scene.add(leg);
+  }
+  /* 台上一只深釉小壶 + 一只茶杯：不多不少 */
+  const pot = new THREE.Mesh(
+    new THREE.SphereGeometry(0.062, 16, 12),
+    new THREE.MeshStandardMaterial({ color: 0x2d2a24, roughness: 0.42, metalness: 0.18 }),
+  );
+  pot.scale.y = 0.82;
+  pot.position.set(0.06, 0.41, 1.5);
+  pot.castShadow = true;
+  scene.add(pot);
+  const cup = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.032, 0.026, 0.05, 14),
+    new THREE.MeshStandardMaterial({ color: 0x8d8578, roughness: 0.76 }),
+  );
+  cup.position.set(0.24, 0.388, 1.46);
+  cup.castShadow = true;
+  scene.add(cup);
 }
 
 /* 右墙一道深色木格栅：10 m 深的房间右立面全是平墙会非常空。
@@ -1445,13 +1773,159 @@ for (const dx of [-0.82, 0.82]) for (const dz of [-0.16, 0.16]) {
   scene.add(gridBase);
 }
 
-/* 右后角一株大型绿植：平衡左侧边柜，也是房间尺度的参照 */
+/* ---------- 和风核心构件：障子墙 · 红霓虹 · 木梁 · 竹帘 ---------- */
+/* 这四样是参考图的识别语言：
+   ① 左墙整面障子（半透纸 + 木格），夜里从背后透光，是最亮的一块"墙"；
+   ② 墙根一根竖向红色霓虹管，冷空间里唯一的高饱和冷红；
+   ③ 天花横向木梁，把 3.9 m 的层高切成有节奏的几段；
+   ④ 窗顶竹帘，压住窗外城市，避免一眼望穿。 */
+
+/* ① 障子墙：木框 + 横竖格 + 半透纸。纸用自发光，夜里从背后"亮"起来。
+   左墙 z 从 -4.4 到 -2.2（避开边柜与门），高 2.8，落在地板上。 */
+/* 必须先声明：障子块内部会给它赋值，用 let 写在后面会落进 TDZ。 */
+let APT_SHOJI_LIGHT = null;
+const shojiMat = new THREE.MeshStandardMaterial({
+  map: shojiPaper(), roughness: 0.94, metalness: 0,
+  emissive: 0x6b5a3e, emissiveIntensity: 0.35, side: THREE.DoubleSide,
+});
+aptGlowMats.push(shojiMat);
+const shojiFrameMat = new THREE.MeshStandardMaterial({
+  map: tableTex, color: 0x6f5b46, roughness: 0.7, metalness: 0.04,
+  emissive: 0x120d09, emissiveIntensity: 0.45,
+});
+aptGlowMats.push(shojiFrameMat);
+{
+  const zA = -4.4, zB = -2.2, y0 = 0.06, y1 = 2.86;
+  const zc = (zA + zB) / 2, wSpan = zB - zA;
+  /* 纸面：一整张，贴在墙前 0.06 */
+  const paper = new THREE.Mesh(new THREE.PlaneGeometry(wSpan - 0.10, y1 - y0), shojiMat);
+  paper.rotation.y = Math.PI / 2;
+  paper.position.set(-APT.halfW + 0.09, (y0 + y1) / 2, zc);
+  scene.add(paper);
+  /* 外框：上下 + 两侧 */
+  for (const [w, h, d, yy, zz] of [
+    [0.07, 0.10, wSpan, y1, zc],
+    [0.07, 0.10, wSpan, y0, zc],
+    [0.07, y1 - y0, 0.09, (y0 + y1) / 2, zA],
+    [0.07, y1 - y0, 0.09, (y0 + y1) / 2, zB],
+  ]) {
+    const bar2 = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), shojiFrameMat);
+    bar2.position.set(-APT.halfW + 0.075, yy, zz);
+    bar2.castShadow = true;
+    scene.add(bar2);
+  }
+  /* 内格：3 道横骨 + 每格 4 道竖骨（与纸上的竖纹对齐，读起来才是"格子"） */
+  for (let i = 1; i < 4; i++) {
+    const yy = y0 + ((y1 - y0) * i) / 4;
+    const hb = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.035, wSpan - 0.12), shojiFrameMat);
+    hb.position.set(-APT.halfW + 0.085, yy, zc);
+    scene.add(hb);
+  }
+  for (let i = 1; i < 8; i++) {
+    const zz = zA + (wSpan * i) / 8;
+    const vb = new THREE.Mesh(new THREE.BoxGeometry(0.04, y1 - y0 - 0.12, 0.028), shojiFrameMat);
+    vb.position.set(-APT.halfW + 0.085, (y0 + y1) / 2, zz);
+    scene.add(vb);
+  }
+  /* 背后一盏柔光：纸要"透"而不是"白"，必须有光源在它后面 */
+  const backLight = new THREE.PointLight(0xffd9a8, 0, 5.2, 2);
+  backLight.position.set(-APT.halfW + 0.42, 1.6, zc);
+  scene.add(backLight);
+  APT_SHOJI_LIGHT = backLight;
+}
+
+/* ② 红色竖霓虹：参考图里最抢眼的一笔。
+   一根细管立在墙根，靠"窄、直、纯红"制造赛博感，不能做成大面积红光。 */
+const NEON = [];
+const neonMat = new THREE.MeshBasicMaterial({ color: 0xff2a1e, transparent: true, opacity: 0, toneMapped: false });
+/* 位置按默认机位算过：相机在 (2.80, 2.46, 3.13) 看向房间中心，水平半视角 31.5°。
+   贴左墙 z=-0.55 时夹角 31.7°，正好差一点出画（实测完全看不见）；
+   挪到縁側台左端（z=-4.0）后夹角只有 14°，稳定入画，也符合参考图
+   "霓虹立在窗前平台边、旁边一株植物"的摆法。 */
+for (const [nx, ny0, nz, nh] of [
+  [-4.35, ENGAWA.h, INTERIOR.winZ + 0.92, 1.45],
+  [-APT.halfW + 0.32, 0.10, 1.35, 1.15],
+]) {
+  const tube = new THREE.Mesh(new THREE.CylinderGeometry(0.019, 0.019, nh, 12), neonMat);
+  tube.position.set(nx, ny0 + nh / 2, nz);
+  scene.add(tube);
+  /* 管座：一小块近黑铁件，管子才不是从地上长出来的 */
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.07, 0.09, 14), aptTrimMat);
+  base.position.set(nx, ny0 - 0.04, nz);
+  scene.add(base);
+  /* 光晕：一根细管的光是"罩"在周围一小圈，不是照亮整间房 */
+  const l = new THREE.PointLight(0xff3a24, 0, 2.6, 2);
+  l.position.set(nx, ny0 + nh * 0.55, nz);
+  scene.add(l);
+  NEON.push({ tube, light: l });
+}
+
+/* ③ 天花横向木梁：4 道，把 10 m 进深切成有节奏的几段。
+   梁不做满宽（留 0.5 边距），是"架在墙上"，不是"糊在天花上"。 */
+const beamMat = new THREE.MeshStandardMaterial({
+  map: tableTex, color: 0x5f4a37, roughness: 0.78, metalness: 0.05,
+  emissive: 0x120c07, emissiveIntensity: 0.45,
+});
+aptGlowMats.push(beamMat);
+for (const bz of [-3.6, -1.5, 0.6, 2.7]) {
+  const beam = new THREE.Mesh(
+    new THREE.BoxGeometry(APT.halfW * 2 - 0.5, 0.20, 0.16), beamMat,
+  );
+  beam.position.set(0, APT.ceilY - 0.10, bz);
+  beam.castShadow = true;
+  beam.receiveShadow = true;
+  scene.add(beam);
+}
+
+/* ④ 竹帘：挂在窗内侧顶部，垂下 0.62。参考图里它正好压住窗景上缘。
+   半透材质，城市仍然透过来，只是一层"看到但看不清全"的过滤。 */
+const sudareMat = new THREE.MeshStandardMaterial({
+  map: sudareTex(), transparent: true, side: THREE.DoubleSide,
+  roughness: 0.9, metalness: 0, opacity: 0.92,
+  emissive: 0x1a1409, emissiveIntensity: 0.4,
+});
+aptGlowMats.push(sudareMat);
+{
+  const blind = new THREE.Mesh(new THREE.PlaneGeometry(winW - 0.3, 0.62), sudareMat);
+  blind.position.set(0, INTERIOR.winTop - 0.31, INTERIOR.winZ + 0.16);
+  scene.add(blind);
+  /* 卷轴：帘子顶端一根深色圆杆 */
+  const roller = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.035, 0.035, winW - 0.24, 14), aptTrimMat,
+  );
+  roller.rotation.z = Math.PI / 2;
+  roller.position.set(0, INTERIOR.winTop - 0.005, INTERIOR.winZ + 0.16);
+  scene.add(roller);
+}
+
+/* ⑤ 栏间（欄間）：窗顶到天花之间那道 0.65 m 的窄带，
+   做成一排竖向细格，白天透光、夜里是暗剪影，正是和室的收口方式。 */
+{
+  const y0 = INTERIOR.winTop + 0.06, y1 = APT.ceilY - 0.20;
+  const n = 26;
+  for (let i = 0; i <= n; i++) {
+    const x = -winW / 2 + (winW * i) / n;
+    const slat2 = new THREE.Mesh(
+      new THREE.BoxGeometry(0.035, y1 - y0, 0.055), shojiFrameMat,
+    );
+    slat2.position.set(x, (y0 + y1) / 2, INTERIOR.winZ + 0.12);
+    scene.add(slat2);
+  }
+  for (const yy of [y0, y1]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(winW, 0.05, 0.07), shojiFrameMat);
+    rail.position.set(0, yy, INTERIOR.winZ + 0.12);
+    scene.add(rail);
+  }
+}
+/* 右后角的绿植挪到縁側台上：参考图里植物都摆在抬高的平台边缘，
+   贴着窗长，是"室内 / 室外"之间那层过渡的一部分。 */
+const PLANT_Z = INTERIOR.winZ + 0.85;
+const PLANT_Y = ENGAWA.h;
 const aptPot = new THREE.Mesh(
   new THREE.CylinderGeometry(0.22, 0.17, 0.4, 20),
   new THREE.MeshStandardMaterial({ color: 0x8d8172, roughness: 0.86 }),
 );
-const PLANT_Z = INTERIOR.winZ + 0.9;   // 跟着后墙走，别留在旧坐标
-aptPot.position.set(APT.halfW - 0.55, 0.26, PLANT_Z);
+aptPot.position.set(APT.halfW - 0.75, PLANT_Y + 0.20, PLANT_Z);
 aptPot.castShadow = true;
 scene.add(aptPot);
 const aptLeafMat = new THREE.MeshStandardMaterial({ color: 0x35502f, roughness: 0.9, side: THREE.DoubleSide });
@@ -1459,8 +1933,8 @@ for (let i = 0; i < 11; i++) {
   const a = (i / 11) * Math.PI * 2;
   const leaf = new THREE.Mesh(new THREE.ConeGeometry(0.13, 1.15, 5), aptLeafMat);
   leaf.position.set(
-    APT.halfW - 0.55 + Math.cos(a) * 0.18,
-    0.84 + (i % 3) * 0.16,
+    APT.halfW - 0.75 + Math.cos(a) * 0.18,
+    PLANT_Y + 0.78 + (i % 3) * 0.16,
     PLANT_Z + Math.sin(a) * 0.18,
   );
   leaf.rotation.set(Math.sin(a) * 0.42, 0, -Math.cos(a) * 0.42);
@@ -1468,51 +1942,87 @@ for (let i = 0; i < 11; i++) {
   scene.add(leaf);
 }
 
-/* 左墙一道通高门：3.9 m 层高下门高提到 2.9，仍留 1.0 m 门楣 */
+/* 左墙一道推拉障子门：和室里没有平开门。
+   两扇半透纸门 + 深木框，纸和左墙那面障子用同一张纹理，读起来是同一套做法。 */
 const doorZ = 3.4;
 const doorH = 2.9;
-const aptDoor = new THREE.Mesh(
-  new THREE.PlaneGeometry(0.95, doorH),
-  new THREE.MeshStandardMaterial({ color: 0x1b1c20, roughness: 0.58, metalness: 0.12 }),
-);
-aptDoor.rotation.y = Math.PI / 2;
-aptDoor.position.set(-APT.halfW + 0.005, doorH / 2, doorZ);
-scene.add(aptDoor);
+for (const dz of [-0.485, 0.485]) {
+  const panel = new THREE.Mesh(new THREE.BoxGeometry(0.035, doorH, 0.94), shojiMat);
+  panel.position.set(-APT.halfW + 0.03 + (dz > 0 ? 0.02 : 0), doorH / 2, doorZ + dz);
+  scene.add(panel);
+  /* 每扇门的木框：上下 + 左右 + 一道竖中骨 */
+  const fr = new THREE.Mesh(new THREE.BoxGeometry(0.05, doorH, 0.06), shojiFrameMat);
+  fr.position.set(-APT.halfW + 0.045, doorH / 2, doorZ + dz - 0.47);
+  scene.add(fr);
+  const fr2 = fr.clone(); fr2.position.z = doorZ + dz + 0.47; scene.add(fr2);
+  const frT = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.07, 0.94), shojiFrameMat);
+  frT.position.set(-APT.halfW + 0.045, doorH - 0.035, doorZ + dz); scene.add(frT);
+  const frB = frT.clone(); frB.position.y = 0.035; scene.add(frB);
+}
 /* 门套：两侧 + 顶，近黑细边 */
-for (const [w, h, dy, dz] of [[0.035, doorH + 0.06, (doorH + 0.06) / 2, -0.5], [0.035, doorH + 0.06, (doorH + 0.06) / 2, 0.5], [0.035, 1.0, doorH + 0.03, 0]]) {
+for (const [w, h, dy, dz] of [[0.035, doorH + 0.06, (doorH + 0.06) / 2, -0.98], [0.035, doorH + 0.06, (doorH + 0.06) / 2, 0.98], [0.035, 1.0, doorH + 0.03, 0]]) {
   const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.04, h, w), aptTrimMat);
   jamb.position.set(-APT.halfW + 0.02, dy, doorZ + dz);
   scene.add(jamb);
 }
-/* 竖向长拉手：现代门常见的通高细杆 */
-const aptHandle = new THREE.Mesh(new THREE.CylinderGeometry(0.011, 0.011, 0.85, 12), aptBrassMat);
-aptHandle.position.set(-APT.halfW + 0.06, 1.35, doorZ + 0.36);
-scene.add(aptHandle);
+/* 引手：障子门上那种小小的横木，不做现代长拉手 */
+for (const dz of [-0.10, 0.10]) {
+  const hikite = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 0.11), aptBrassMat);
+  hikite.position.set(-APT.halfW + 0.055, 1.02, doorZ + dz);
+  scene.add(hikite);
+}
 
-/* 左墙一幅大画：深色底 + 两三个低饱和色块。深色空间里画是唯一的大块"彩色"，
-   所以画本身也要压住饱和度，否则整面墙会被它抢走。 */
+/* 左墙一幅竖挂轴（掛軸）：和室的墙上不挂方画，挂窄长的卷轴。
+   画面是一笔远山 + 一片留白，纸本色，边缘深色绫边。 */
 const aptArtTex = (() => {
   const c = document.createElement('canvas');
-  c.width = 384; c.height = 480;
+  c.width = 256; c.height = 720;
   const g = c.getContext('2d');
-  g.fillStyle = '#1d1e22'; g.fillRect(0, 0, 384, 480);
-  g.fillStyle = '#3c4448'; g.beginPath(); g.arc(150, 180, 96, 0, 7); g.fill();
-  g.fillStyle = '#8a6f52'; g.fillRect(206, 288, 130, 112);
-  g.fillStyle = '#5a5f52'; g.fillRect(52, 330, 96, 74);
-  g.fillStyle = 'rgba(255,240,220,.06)'; g.fillRect(0, 0, 384, 480);
+  /* 纸底：米色，带一点纵向渐变 */
+  const bg = g.createLinearGradient(0, 0, 0, 720);
+  bg.addColorStop(0, '#ded2b8');
+  bg.addColorStop(1, '#c9bb9e');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, 256, 720);
+  /* 远山：两笔淡墨，浓淡分层 */
+  g.fillStyle = 'rgba(58,62,58,.30)';
+  g.beginPath();
+  g.moveTo(-10, 300);
+  g.quadraticCurveTo(60, 214, 128, 286);
+  g.quadraticCurveTo(186, 236, 266, 300);
+  g.lineTo(266, 420); g.lineTo(-10, 420); g.closePath();
+  g.fill();
+  g.fillStyle = 'rgba(38,42,40,.44)';
+  g.beginPath();
+  g.moveTo(-10, 372);
+  g.quadraticCurveTo(78, 306, 150, 364);
+  g.quadraticCurveTo(206, 330, 266, 376);
+  g.lineTo(266, 470); g.lineTo(-10, 470); g.closePath();
+  g.fill();
+  /* 一轮淡月 */
+  g.fillStyle = 'rgba(214,196,150,.30)';
+  g.beginPath(); g.arc(168, 168, 30, 0, 7); g.fill();
+  /* 绫边：上下深色，两侧细边 */
+  g.fillStyle = '#3d362b';
+  g.fillRect(0, 0, 256, 54);
+  g.fillRect(0, 666, 256, 54);
+  g.fillRect(0, 0, 16, 720);
+  g.fillRect(240, 0, 16, 720);
+  g.fillStyle = 'rgba(255,240,210,.06)';
+  g.fillRect(0, 54, 256, 2);
   const t = new THREE.CanvasTexture(c);
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 })();
 const aptArt = new THREE.Mesh(
-  new THREE.BoxGeometry(0.045, 2.1, 1.68),
+  new THREE.BoxGeometry(0.035, 1.95, 0.72),
   [
-    new THREE.MeshStandardMaterial({ map: aptArtTex, roughness: 0.9, emissive: 0x15161a, emissiveIntensity: 0.5 }),
+    new THREE.MeshStandardMaterial({ map: aptArtTex, roughness: 0.92, emissive: 0x1a1710, emissiveIntensity: 0.5 }),
     aptDarkMat, aptDarkMat, aptDarkMat, aptDarkMat, aptDarkMat,
   ],
 );
-/* 画心 1.85 m：上沿 2.9 离 3.9 的天花留 1.0 m，比例与原来一致 */
-aptArt.position.set(-APT.halfW + 0.08, 1.85, -1.6);
+/* 画心 1.85 m：上沿 2.83 离 3.9 的天花留 1.07 m */
+aptArt.position.set(-APT.halfW + 0.06, 1.85, -1.6);
 scene.add(aptArt);
 
 /* 二层照明由天花那三盏嵌灯负责（aptDownlights），模型台内部另有自己的灯，两层分开 */
@@ -1553,6 +2063,7 @@ const viewTex = (() => {
 
   /* data URI 解码是异步的：先挂空纹理保证初始化与 setHour 的同步流程不中断，
      图片就绪后画进画布、标 needsUpdate，再标脏重绘。 */
+  const hooks = [];
   const img = new Image();
   img.onload = () => {
     night.ctx.drawImage(img, 0, 0, PHOTO_W, PHOTO_H);
@@ -1571,11 +2082,13 @@ const viewTex = (() => {
     g.fillStyle = wash;
     g.fillRect(0, 0, PHOTO_W, PHOTO_H);
     day.tex.needsUpdate = true;
+    /* 地面倒影也依赖这张图：图片就绪后通知外面重画 */
+    for (const h of hooks) h(img);
     markDirty();
   };
   img.src = CITY_PHOTO_URL;
 
-  return { night: night.tex, day: day.tex };
+  return { night: night.tex, day: day.tex, hooks };
 })();
 /* 城市平面必须在后墙之外：后墙推到 -4.9 后，原来 -4.6 会落到房间内侧穿帮。
    窗也放宽到 7.6 m，平面 14→19 才不会在两侧露边。 */
@@ -1586,6 +2099,77 @@ const cityView = new THREE.Mesh(
 cityView.position.set(0, 1.9, INTERIOR.winZ - 1.5);
 cityView.userData.cityTex = viewTex;
 scene.add(cityView);
+
+/* ---------- 地面倒影：抛光地板最重要的证据 ---------- */
+/* 参考图里地板是"能把窗和霓虹拖成一道长反光"的。three 的 StandardMaterial
+   没有实时反射，这里用一张镜像 + 垂直压扁 + 模糊的贴图，加色叠在地面上：
+   它不是物理正确的反射，但读起来就是"打过蜡的木地板映着窗"。 */
+const reflCanvas = document.createElement('canvas');
+reflCanvas.width = 512; reflCanvas.height = 512;
+const reflTex = new THREE.CanvasTexture(reflCanvas);
+reflTex.colorSpace = THREE.SRGBColorSpace;
+const reflMat = new THREE.MeshBasicMaterial({
+  map: reflTex, transparent: true, opacity: 0, depthWrite: false,
+  blending: THREE.AdditiveBlending, fog: false, toneMapped: false,
+});
+/* 倒影只铺贴近窗的一条带（2.6 m 深），不铺到房间中央：
+   铺太深时，城市里某颗特别亮的窗会被模糊成一颗"悬浮光球"落在桌边（实测过）。 */
+const floorRefl = new THREE.Mesh(new THREE.PlaneGeometry(winW + 1.0, 2.6), reflMat);
+floorRefl.rotation.x = -Math.PI / 2;
+floorRefl.position.set(0, 0.014, INTERIOR.winZ + 1.55);
+floorRefl.renderOrder = -1;
+scene.add(floorRefl);
+
+/* 图片就绪后把城市镜像画进倒影画布 */
+viewTex.hooks.push((img) => {
+  const g = reflCanvas.getContext('2d');
+  g.clearRect(0, 0, 512, 512);
+
+  /* 先把城市翻转到临时画布 */
+  const tmp = document.createElement('canvas');
+  tmp.width = 512; tmp.height = 512;
+  const tg = tmp.getContext('2d');
+  tg.save();
+  tg.translate(0, 512);
+  tg.scale(1, -1);
+  tg.filter = 'blur(2px) brightness(0.85)';
+  tg.drawImage(img, 0, 0, 512, 512 * 2.6);
+  tg.restore();
+
+  /* 纵向运动模糊：把同一张图沿 y 反复叠加 26 次。
+     地板反光是"沿视线拖长的竖条"，各向同性高斯只会把亮窗糊成一颗圆球，
+     那颗圆球落在桌边就是画面里突兀的"悬浮光球"。叠加后峰值被摊平约 20 倍。 */
+  g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 26; i++) {
+    g.globalAlpha = 0.055;
+    g.drawImage(tmp, 0, i * 7);
+  }
+  g.globalAlpha = 1;
+  g.globalCompositeOperation = 'source-over';
+
+  /* 顶部（靠近窗）亮、往下迅速衰减：地板反光是一条渐变带，不是一整块 */
+  const fade = g.createLinearGradient(0, 0, 0, 512);
+  fade.addColorStop(0, 'rgba(0,0,0,1)');
+  fade.addColorStop(0.42, 'rgba(0,0,0,.42)');
+  fade.addColorStop(0.78, 'rgba(0,0,0,.08)');
+  fade.addColorStop(1, 'rgba(0,0,0,0)');
+  g.globalCompositeOperation = 'destination-in';
+  g.fillStyle = fade;
+  g.fillRect(0, 0, 512, 512);
+  /* 左右再收一道：掠射角处反光本就更弱 */
+  const side = g.createLinearGradient(0, 0, 512, 0);
+  side.addColorStop(0, 'rgba(0,0,0,0)');
+  side.addColorStop(0.16, 'rgba(0,0,0,.55)');
+  side.addColorStop(0.38, 'rgba(0,0,0,1)');
+  side.addColorStop(0.62, 'rgba(0,0,0,1)');
+  side.addColorStop(0.84, 'rgba(0,0,0,.55)');
+  side.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = side;
+  g.fillRect(0, 0, 512, 512);
+  g.globalCompositeOperation = 'source-over';
+  reflTex.needsUpdate = true;
+  markDirty();
+});
 
 /* 窗外的一层城市反光：让玻璃后面"有光"，而不是一块黑板 */
 const cityGlowTex = (() => {
@@ -2510,6 +3094,18 @@ function setHour(h, silent) {
     if (o.userData.bulb) o.userData.bulb.intensity = lampK * 3.0 * MODEL_SCALE_SQ;
     if (o.userData.halo) o.userData.halo.material.opacity = lampK * 0.48;
   });
+
+  /* 和风新构件：障子背光 + 縁側台沿灯 + 红色竖霓虹。
+     灯全亮之后它们才起，白天彻底收掉——否则白天会看到"没通电的霓虹"。 */
+  if (APT_SHOJI_LIGHT) APT_SHOJI_LIGHT.intensity = lampK * 4.4;
+  shojiMat.emissiveIntensity = lerp(0.16, 0.62, lampK);
+  aptNoseGlow.material.opacity = lampK * 0.42;
+  neonMat.opacity = lampK * 0.95;
+  for (const n of NEON) {
+    n.light.intensity = lampK * 1.55;
+  }
+  /* 地面倒影：夜里窗和霓虹才亮，倒影跟着走；白天几乎收掉 */
+  reflMat.opacity = lampK * 0.85;
 
   /* 夜里降曝光：受 ACES 影响的只有屋内实物，窗外城市是 toneMapped:false，
      不会跟着暗下去——室内沉下来、窗外依旧亮，明暗差自然就出来了。 */
@@ -3719,4 +4315,32 @@ if (location.search.includes('selftest')) {
     return k1 && lagging && anglesSync && converged ? 'ok' : 'FAIL';
   });
   document.title = 'SELFTEST ' + log.join(' | ');
+}
+
+/* 调试探针：?probe=1 时暴露拾取函数，用来定位画面上的可疑对象（只读，不改状态） */
+if (location.search.includes('probe')) {
+  window.__probe = (cx, cy) => {
+    const ndc = new THREE.Vector2(
+      (cx / window.innerWidth) * 2 - 1,
+      -(cy / window.innerHeight) * 2 + 1,
+    );
+    const rc = new THREE.Raycaster();
+    rc.setFromCamera(ndc, camera);
+    const hits = rc.intersectObjects(scene.children, true);
+    return hits.slice(0, 5).map((h) => {
+      const o = h.object;
+      const g = o.geometry;
+      return {
+        dist: +h.distance.toFixed(2),
+        point: [h.point.x, h.point.y, h.point.z].map((v) => +v.toFixed(2)),
+        type: g ? g.type : '?',
+        mat: o.material ? (Array.isArray(o.material) ? 'multi' : o.material.type) : '?',
+        pos: [o.position.x, o.position.y, o.position.z].map((v) => +v.toFixed(2)),
+        scale: +o.scale.x.toFixed(2),
+        name: o.name || '',
+        blend: o.material && !Array.isArray(o.material) ? o.material.blending : null,
+        opacity: o.material && !Array.isArray(o.material) ? +o.material.opacity.toFixed(2) : null,
+      };
+    });
+  };
 }
