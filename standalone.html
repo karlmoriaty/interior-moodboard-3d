@@ -57380,6 +57380,102 @@ const aptArt = new THREE.Mesh(
 aptArt.position.set(-APT.halfW + 0.06, 1.85, -1.6);
 scene.add(aptArt);
 
+/* ---------- 署名：房间里的 @karlmoriaty 标注 ---------- */
+/* 不做浮在画面上的水印，做成"房间里本来就该有的东西"：
+   ① 桌面右下角一块黄铜制作者铭牌（平放在桌面上，像家具的落款铜牌）
+   ② 縁側台右端一块小立牌（像展厅作品旁的标签牌）
+   两块都可点：①去 GitHub，②去 X。悬停时铜面变亮、光标变手型。 */
+const LINK_SPOTS = [];
+
+/* 黄铜板小工具：金属渐变 + 阴刻字（深色字 + 下方一道高光，读起来是"刻进去的"） */
+function brassPlateMesh(w, h, text, sub) {
+  const PX = 12;                                  // 每毫米像素，够刻字清楚
+  const c = document.createElement('canvas');
+  c.width = Math.round(w * PX * 1000);
+  c.height = Math.round(h * PX * 1000);
+  const g = c.getContext('2d');
+  const W2 = c.width, H2 = c.height;
+  /* 拉丝黄铜：斜向渐变 + 细横向刷痕 */
+  const bg = g.createLinearGradient(0, 0, W2, H2);
+  bg.addColorStop(0, '#d9b880');
+  bg.addColorStop(0.3, '#b8945f');
+  bg.addColorStop(0.55, '#cfa971');
+  bg.addColorStop(0.8, '#a3814f');
+  bg.addColorStop(1, '#c9a46c');
+  g.fillStyle = bg;
+  g.fillRect(0, 0, W2, H2);
+  for (let i = 0; i < 260; i++) {
+    const y = Math.random() * H2;
+    g.strokeStyle = `rgba(${Math.random() > 0.5 ? 255 : 60},${Math.random() > 0.5 ? 240 : 50},${Math.random() > 0.5 ? 210 : 40},${(0.02 + Math.random() * 0.05).toFixed(3)})`;
+    g.lineWidth = 0.5 + Math.random() * 1.4;
+    g.beginPath(); g.moveTo(0, y); g.lineTo(W2, y + (Math.random() - 0.5) * 3); g.stroke();
+  }
+  /* 四边倒角 */
+  g.strokeStyle = 'rgba(255,240,210,.55)'; g.lineWidth = Math.max(2, H2 * 0.02);
+  g.strokeRect(g.lineWidth / 2, g.lineWidth / 2, W2 - g.lineWidth, H2 - g.lineWidth);
+  g.strokeStyle = 'rgba(52,34,14,.45)';
+  g.strokeRect(g.lineWidth * 1.9, g.lineWidth * 1.9, W2 - g.lineWidth * 3.8, H2 - g.lineWidth * 3.8);
+
+  /* 主字 */
+  const fs = Math.round(H2 * (sub ? 0.40 : 0.48));
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.font = `600 ${fs}px "Georgia", "Times New Roman", serif`;
+  const cy = sub ? H2 * 0.42 : H2 * 0.52;
+  g.fillStyle = 'rgba(255,244,220,.55)';           // 阴刻的下方反光
+  g.fillText(text, W2 / 2, cy + fs * 0.055);
+  g.fillStyle = 'rgba(46,30,12,.88)';              // 刻痕本体
+  g.fillText(text, W2 / 2, cy);
+  if (sub) {
+    const fs2 = Math.round(H2 * 0.17);
+    g.font = `400 ${fs2}px "Georgia", "Times New Roman", serif`;
+    g.fillStyle = 'rgba(52,36,16,.62)';
+    g.fillText(sub, W2 / 2, H2 * 0.74);
+  }
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex, roughness: 0.34, metalness: 0.82,
+    emissive: 0x2a1d10, emissiveIntensity: 0.5,
+  });
+  aptGlowMats.push(mat);
+  return new THREE.Mesh(new THREE.PlaneGeometry(w, h), mat);
+}
+
+/* ① 桌面铜牌：平放在桌面右下角，外侧朝上。
+   位置避开模型台占地（模型在 x -0.68..0.68 / z -1.76..-0.74）。
+   面内要再转 180°：PlaneGeometry 的 +U 映射到世界 +X，而相机在 +X 侧，
+   不转的话字是倒着的（实测截图确认）。 */
+const plateTable = brassPlateMesh(0.30, 0.105, 'karlmoriaty', 'interior moodboard · 2026');
+plateTable.name = 'sign-table';
+plateTable.rotation.x = -Math.PI / 2;
+plateTable.rotation.z = Math.PI - 0.06;
+plateTable.position.set(1.02, TABLE.h + 0.004, -0.66);
+scene.add(plateTable);
+LINK_SPOTS.push({ mesh: plateTable, url: 'https://github.com/karlmoriaty', label: '在 GitHub 上看 karlmoriaty' });
+
+/* ② 縁側台上的小立牌：立在台右端、朝房间内侧微侧，像展厅的作品标签。
+   杆 + 斜板，板面朝相机方向。 */
+{
+  const post = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.008, 0.010, 0.30, 10),
+    new THREE.MeshStandardMaterial({ color: 0x2a241c, roughness: 0.42, metalness: 0.6 }),
+  );
+  post.position.set(0.95, ENGAWA.h + 0.15, -3.45);
+  scene.add(post);
+  const plate = brassPlateMesh(0.26, 0.085, '@karlmoriaty', 'X / TWITTER');
+  plate.name = 'sign-engawa';
+  /* 位置是按投影实测算的：x=3.55 投影到屏幕 x=1898（画面外），
+     x=2.15 落到 1512（贴着右侧时间轴面板），最终取 0.95——
+     在两只坐垫之间的空当，既不挡坐垫也不压 UI。 */
+  plate.position.set(0.95, ENGAWA.h + 0.335, -3.45);
+  plate.rotation.y = -0.42;                        // 朝相机方向偏一点
+  plate.rotation.x = -0.16;
+  scene.add(plate);
+  LINK_SPOTS.push({ mesh: plate, url: 'https://x.com/karlmoriaty', label: '在 X 上找 karlmoriaty' });
+}
+
 /* 二层照明由天花那三盏嵌灯负责（aptDownlights），模型台内部另有自己的灯，两层分开 */
 
 /* 玻璃：极淡一层，主要作用是让城市"隔着一层"而不是直接贴在墙上 */
@@ -57414,7 +57510,7 @@ const viewTex = (() => {
     t.offset.set(-0.190 * 1.80, 0.0575 - 0.267 * (0.885 / 0.409));
     return { tex: t, canvas: c, ctx: g };
   };
-  const night = mkTex(), day = mkTex();
+  const night = mkTex(), dusk = mkTex(), day = mkTex();
 
   /* data URI 解码是异步的：先挂空纹理保证初始化与 setHour 的同步流程不中断，
      图片就绪后画进画布、标 needsUpdate，再标脏重绘。 */
@@ -57424,26 +57520,79 @@ const viewTex = (() => {
     night.ctx.drawImage(img, 0, 0, PHOTO_W, PHOTO_H);
     night.tex.needsUpdate = true;
 
-    /* 白天版从同一张照片派生：楼体轮廓逐像素一致，只是天亮了。
-       若白天换回程序化城市，拉时间轴会整座城突变，那是最糟的观感。 */
-    const g = day.ctx;
-    g.filter = 'brightness(1.62) saturate(0.30) contrast(0.90)';
-    g.drawImage(img, 0, 0, PHOTO_W, PHOTO_H);
-    g.filter = 'none';
-    const wash = g.createLinearGradient(0, 0, 0, PHOTO_H);
-    wash.addColorStop(0, 'rgba(150,184,218,.62)');
-    wash.addColorStop(0.52, 'rgba(188,206,222,.36)');
-    wash.addColorStop(1, 'rgba(176,190,206,.20)');
-    g.fillStyle = wash;
-    g.fillRect(0, 0, PHOTO_W, PHOTO_H);
-    day.tex.needsUpdate = true;
+    /* ---------- 黄昏版（warm 预设 18.6 用） ---------- */
+    /* 原图是深夜。直接把夜景提亮会变成"脏灰"，所以先加饱和、再按层染色：
+       天空压成深靛 → 地平线推成橙金，城市本体蒙一层暖雾。
+       这样窗里是"太阳刚落、灯刚亮"的那十分钟，而不是一张提亮的夜景。 */
+    {
+      const g = dusk.ctx;
+      g.filter = 'brightness(1.12) saturate(1.50) contrast(1.06)';
+      g.drawImage(img, 0, 0, PHOTO_W, PHOTO_H);
+      g.filter = 'none';
+      /* 天空：紫靛 → 玫红 → 橙金 */
+      const sky = g.createLinearGradient(0, 0, 0, PHOTO_H * 0.60);
+      sky.addColorStop(0, 'rgba(42,44,104,.66)');
+      sky.addColorStop(0.42, 'rgba(138,74,104,.40)');
+      sky.addColorStop(0.78, 'rgba(226,120,74,.30)');
+      sky.addColorStop(1, 'rgba(255,160,86,.12)');
+      g.fillStyle = sky;
+      g.fillRect(0, 0, PHOTO_W, PHOTO_H * 0.60);
+      /* 地平线一道余晖，把楼顶勾亮 */
+      const glow = g.createLinearGradient(0, PHOTO_H * 0.34, 0, PHOTO_H * 0.74);
+      glow.addColorStop(0, 'rgba(255,178,104,0)');
+      glow.addColorStop(0.5, 'rgba(255,190,120,.26)');
+      glow.addColorStop(1, 'rgba(255,138,70,0)');
+      g.fillStyle = glow;
+      g.fillRect(0, PHOTO_H * 0.34, PHOTO_W, PHOTO_H * 0.40);
+      /* 下层城市压一点暖褐，别让霓虹蓝把整幅拽回冷调 */
+      const warmFloor = g.createLinearGradient(0, PHOTO_H * 0.55, 0, PHOTO_H);
+      warmFloor.addColorStop(0, 'rgba(120,70,48,0)');
+      warmFloor.addColorStop(1, 'rgba(96,54,38,.30)');
+      g.fillStyle = warmFloor;
+      g.fillRect(0, PHOTO_H * 0.55, PHOTO_W, PHOTO_H * 0.45);
+      dusk.tex.needsUpdate = true;
+    }
+
+    /* ---------- 白昼版（clear 预设 12.4 用） ---------- */
+    /* 旧版只把夜景提亮 + 去饱和，天空仍是黑的，看起来像"阴天的夜"。
+       现在分两步：先把楼体提亮压反，再用一层天空渐变真正换掉黑天。
+       天空区域约在画面上 30%，渐变到 55% 处收干净。 */
+    {
+      const g = day.ctx;
+      g.filter = 'brightness(2.35) saturate(0.55) contrast(0.62)';
+      g.drawImage(img, 0, 0, PHOTO_W, PHOTO_H);
+      g.filter = 'none';
+
+      /* 天空：真正换成蓝天。不用半透明"蒙"，而是高不透明度的渐变覆盖，
+         否则底下的黑天会透上来，整幅还是脏灰。
+         注意：窗只截到照片 y 152–345（中段），所以渐变必须压到 0.7 才盖得住。 */
+      const sky = g.createLinearGradient(0, 0, 0, PHOTO_H * 0.72);
+      sky.addColorStop(0, 'rgba(58,124,198,.98)');
+      sky.addColorStop(0.30, 'rgba(96,158,218,.96)');
+      sky.addColorStop(0.58, 'rgba(150,192,226,.90)');
+      sky.addColorStop(0.80, 'rgba(198,214,228,.72)');
+      sky.addColorStop(1, 'rgba(214,220,222,0)');
+      g.fillStyle = sky;
+      g.fillRect(0, 0, PHOTO_W, PHOTO_H * 0.72);
+
+      /* 地平线一层暖白雾：白天城市远处总有一层灰白空气。
+         这层雾同时负责"压掉楼体上过亮的窗灯"——白天还满窗灯火会读成夜景。 */
+      const haze = g.createLinearGradient(0, PHOTO_H * 0.40, 0, PHOTO_H);
+      haze.addColorStop(0, 'rgba(232,234,228,.46)');
+      haze.addColorStop(0.45, 'rgba(216,218,212,.34)');
+      haze.addColorStop(1, 'rgba(198,198,192,.24)');
+      g.fillStyle = haze;
+      g.fillRect(0, PHOTO_H * 0.40, PHOTO_W, PHOTO_H * 0.60);
+      day.tex.needsUpdate = true;
+    }
+
     /* 地面倒影也依赖这张图：图片就绪后通知外面重画 */
     for (const h of hooks) h(img);
     markDirty();
   };
   img.src = CITY_PHOTO_URL;
 
-  return { night: night.tex, day: day.tex, hooks };
+  return { night: night.tex, dusk: dusk.tex, day: day.tex, hooks };
 })();
 /* 城市平面必须在后墙之外：后墙推到 -4.9 后，原来 -4.6 会落到房间内侧穿帮。
    窗也放宽到 7.6 m，平面 14→19 才不会在两侧露边。 */
@@ -57454,6 +57603,20 @@ const cityView = new THREE.Mesh(
 cityView.position.set(0, 1.9, INTERIOR.winZ - 1.5);
 cityView.userData.cityTex = viewTex;
 scene.add(cityView);
+
+/* 交叉淡入用的第二层：三档贴图硬切会在切换时刻闪一下（拖时间轴尤其明显）。
+   同一平面位置再叠一层，按权重分配 opacity，两档之间就有过渡。 */
+const cityOverlay = new THREE.Mesh(
+  new THREE.PlaneGeometry(19, 8.5),
+  new THREE.MeshBasicMaterial({
+    map: viewTex.night, fog: false, toneMapped: false,
+    transparent: true, opacity: 0, depthWrite: false,
+  }),
+);
+cityOverlay.position.set(0, 1.9, INTERIOR.winZ - 1.49);
+cityOverlay.userData.cityTex = viewTex;
+cityOverlay.renderOrder = 1;
+scene.add(cityOverlay);
 
 /* ---------- 地面倒影：抛光地板最重要的证据 ---------- */
 /* 参考图里地板是"能把窗和霓虹拖成一道长反光"的。three 的 StandardMaterial
@@ -57564,6 +57727,15 @@ scene.add(rimCool);
 const rimWarm = new THREE.DirectionalLight(0xffbb88, 0.32);
 rimWarm.position.set(2.6, 1.4, -1.8);
 scene.add(rimWarm);
+
+/* 黄昏灌进来的那一道暖光：warm 预设的室内之所以"没效果"，
+   是因为屋里只有冷白的天光和冷补光，窗外的暖调照不进屋。
+   这盏灯从窗口方向斜射进来，只在天光偏暖时点亮（见 setHour）。 */
+const duskSpill = new THREE.DirectionalLight(0xff9c5a, 0);
+duskSpill.position.set(1.2, 2.2, INTERIOR.winZ + 0.6);
+duskSpill.target.position.set(-0.4, 0.6, 1.2);
+scene.add(duskSpill);
+scene.add(duskSpill.target);
 
 /* 近处两团虚焦的光，转视角时会有位移 */
 function bokehSprite(size) {
@@ -58343,6 +58515,20 @@ function applyBackdrop(force) {
   st.setProperty('--arch-line', cssRGB(mixRGB(floor, [0, 0, 0], 0.32), 0.17));
 }
 
+/* 三档之间做交叉淡入，避免硬切闪光。
+   权重是钟点的连续函数，三段之间各自有一个 1 小时左右的过渡带：
+   5.0–5.9 夜→昏、6.1–7.0 昏→昼、16.2–17.0 昼→昏、19.0–19.9 昏→夜。 */
+function cityWeights(hour) {
+  const ramp = (h, a, b) => clamp((h - a) / (b - a), 0, 1);
+  const day = Math.min(ramp(hour, 6.1, 7.0), 1 - ramp(hour, 16.2, 17.0));
+  const dusk = Math.max(
+    ramp(hour, 5.0, 5.9) - ramp(hour, 6.1, 7.0),     // 破晓
+    ramp(hour, 16.2, 17.0) - ramp(hour, 19.0, 19.9), // 黄昏
+    0,
+  );
+  return { day: clamp(day, 0, 1), dusk: clamp(dusk, 0, 1), night: clamp(1 - day - dusk, 0, 1) };
+}
+
 function setHour(h, silent) {
   state.hour = clamp(h, 6, 23);
   const hour = state.hour;
@@ -58369,6 +58555,12 @@ function setHour(h, silent) {
 
   const warmK = clamp(1 - elev / 58, 0, 1) * clamp(dayF + 0.15, 0, 1);
 
+  /* 时段先定下来，光照和贴图都要按它分档。
+     night / dusk / day 三档：之前只有"白天/夜里"两档，黄昏落进白天，
+     于是暖光(18.6)与清亮(12.4)共用同一张灰白贴图，窗外发死。 */
+  const phase = hour >= 19.8 || hour < 5.6 ? 'night'
+    : (hour >= 17.0 || hour < 7.0) ? 'dusk' : 'day';
+
   const cDay = new THREE.Color(0xfff4e6);
   const cGold = new THREE.Color(0xff9a4e);
   const cMoon = new THREE.Color(0x93a9de);
@@ -58377,33 +58569,78 @@ function setHour(h, silent) {
   sun.color.copy(c);
   sun.intensity = dayF < 0.06 ? 0.10 : lerp(0.18, 1.55, dayF);
 
-  hemi.intensity = lerp(0.09, 0.28, dayF);
+  /* 天光与环境：白天要"涌进屋里"而不是只照亮窗外。
+     旧值白天 hemi 0.28 / environment 0.30 / windowFill 0.32（比夜里还低），
+     深色木墙吸光，屋里于是发闷。三个值按 dayF 抬上去。 */
+  hemi.intensity = lerp(0.09, 0.46, dayF);
   hemi.color.set(dayF > 0.3 ? 0xdfe9ff : 0x8294bb);
   hemi.groundColor.set(dayF > 0.3 ? 0x6d5844 : 0x302a23);
 
-  bounce.intensity = lerp(0.03, 0.24, dayF);
+  bounce.intensity = lerp(0.03, 0.42, dayF);
 
   /* 场景级的那几盏原本是常量，无论几点都把屋子均匀洗白——夜里没有暗部，
      就谈不上氛围。现在全部跟着天光收放：白天由太阳主导，天黑后交给屋里的灯。 */
-  scene.environmentIntensity = lerp(0.055, 0.30, dayF);
-  windowFill.intensity = lerp(0.42, 0.32, dayF);   // 夜里窗外城市更亮，冷补光反而要略强
-  rimCool.intensity = lerp(0.18, 0.55, dayF);
-  rimWarm.intensity = lerp(0.12, 0.32, dayF);
+  scene.environmentIntensity = lerp(0.055, 0.58, dayF);
+  /* windowFill 是"从窗进来的天光"。旧值白天 0.32 比夜里 0.42 还低，
+     等于白天窗口反而更暗，屋里自然闷。现在白天抬到 1.05。 */
+  windowFill.intensity = lerp(0.42, 1.05, dayF);
+  rimCool.intensity = lerp(0.18, 0.72, dayF);
+  rimWarm.intensity = lerp(0.12, 0.42, dayF);
   spill.material.opacity = lerp(0.22, 0.16, dayF);
 
-  /* 城市贴图按天光切：白天用白昼版，窗不再亮着灯，室内外光线才对得上 */
-  const isNight = dayF < 0.5;
-  for (const m of [cityFar, cityMid, cityNear, cityView]) {
-    const pair = m.userData.cityTex;
-    const tex = isNight ? pair.night : pair.day;
-    if (m.material.map !== tex) { m.material.map = tex; m.material.needsUpdate = true; }
+  /* 黄昏暖光：只在暖光时段起。dayF 已从 1 落到 0.8 左右，太阳低、光色转金，
+     这时屋里必须也被染暖，否则窗外黄昏、屋里冷白，割裂感很强。
+     duskWarmK 同时用来把两盏冷补光"调暖、调弱"——它们强度不低
+     （windowFill 0.94 / rimCool 0.6），不处理会把暖光直接冲成灰。 */
+  const duskWarmK = phase === 'dusk' ? clamp(1 - Math.abs(hour - 18.2) / 2.0, 0, 1) : 0;
+  duskSpill.intensity = duskWarmK * 1.35;
+  if (duskWarmK > 0.01) {
+    windowFill.color.setHex(0xffc79a);
+    rimCool.color.setHex(0xffb98c);
+    rimCool.intensity *= 1 - duskWarmK * 0.7;
+    windowFill.intensity *= 1 - duskWarmK * 0.35;
+    hemi.color.set(0xffd2a4);
+    hemi.groundColor.set(0x7a4a2c);
+    scene.environmentIntensity *= 1 - duskWarmK * 0.3;
+  } else {
+    windowFill.color.setHex(0x9db8dc);
+    rimCool.color.setHex(0x9fb8e0);
   }
-  skyCard.material.map = (hour >= 17.2 || hour < 7.2) ? roomViewTex.night : roomViewTex.day;
+
+  /* 城市贴图按 phase 三档切，两档之间用第二层交叉淡入。
+     phase 硬切会在 17:00 / 19:48 闪一下（拖时间轴尤其明显），实测确认。 */
+  const w = cityWeights(hour);
+  const order = [['night', w.night], ['dusk', w.dusk], ['day', w.day]]
+    .sort((a, b) => b[1] - a[1]);
+  const baseKey = order[0][0], overKey = order[1][0];
+  const sum = order[0][1] + order[1][1];
+  if (cityView.material.map !== viewTex[baseKey]) {
+    cityView.material.map = viewTex[baseKey];
+    cityView.material.needsUpdate = true;
+  }
+  if (cityOverlay.material.map !== viewTex[overKey]) {
+    cityOverlay.material.map = viewTex[overKey];
+    cityOverlay.material.needsUpdate = true;
+  }
+  cityOverlay.material.opacity = sum > 1e-6 ? clamp(order[1][1] / sum, 0, 1) : 0;
+  cityOverlay.visible = cityOverlay.material.opacity > 0.004;
+  /* 三层圆柱只有 night/day 两版，取权重更高的那档；它们在最远处只负责视差 */
+  const cylKey = w.day > 0.55 ? 'day' : 'night';
+  for (const m of [cityFar, cityMid, cityNear]) {
+    const pair = m.userData.cityTex;
+    const want = pair[cylKey] || pair.night;
+    if (m.material.map !== want) { m.material.map = want; m.material.needsUpdate = true; }
+  }
+  skyCard.material.map = (w.day > 0.5) ? roomViewTex.day : roomViewTex.night;
   /* 夜里窗后是房间的暖光，白天是漫射天光；都只是二层，不是城市 */
   skyCard.material.needsUpdate = true;
-  scene.background.set(isNight ? 0x0a0e16 : 0x9aa9bc);
-  scene.fog.color.set(isNight ? 0x141b28 : 0xa8b6c6);
-  scene.fog.density = isNight ? 0.0055 : 0.0022;
+  /* 背景 / 雾按权重插值，而不是三选一：这样淡入过程中环境色也是连续变的 */
+  const isNight = w.night > 0.5;
+  scene.background.setHex(0x0a0e16).lerp(new THREE.Color(0x241d28), w.dusk)
+    .lerp(new THREE.Color(0x9aa9bc), w.day);
+  scene.fog.color.setHex(0x141b28).lerp(new THREE.Color(0x2e2530), w.dusk)
+    .lerp(new THREE.Color(0xa8b6c6), w.day);
+  scene.fog.density = 0.0055 * w.night + 0.0040 * w.dusk + 0.0022 * w.day;
   /* 城市反光从 1.0 收到 0.72：原值在窗下半铺出一片暖白雾，
      夜景会发灰；收一点后窗外恢复通透，辉光只留给真正的灯点。 */
   /* 窗外换成实拍夜景后，这两层是给「程序化城市」补光用的：
@@ -58686,6 +58923,17 @@ function setNDC(e) {
   ndc.y = -((e.clientY - r.top) / r.height) * 2 + 1;
 }
 
+/* 署名铭牌拾取：命中就返回那条记录，用于悬停高亮与点击跳转 */
+function pickLink(e) {
+  if (!LINK_SPOTS.length) return null;
+  setNDC(e);
+  raycaster.setFromCamera(ndc, camera);
+  const meshes = LINK_SPOTS.map((s) => s.mesh);
+  const hits = raycaster.intersectObjects(meshes, false);
+  if (!hits.length) return null;
+  return LINK_SPOTS.find((s) => s.mesh === hits[0].object) || null;
+}
+
 function pickSurface(e) {
   setNDC(e);
   raycaster.setFromCamera(ndc, camera);
@@ -58726,6 +58974,7 @@ function highlight(key) {
 
 /* 轨道控制 */
 let mode = null;
+let hoveredLink = null;
 const dragInfo = { x: 0, y: 0, theta: 0, phi: 0, moved: false };
 
 canvasEl.addEventListener('pointerdown', (e) => {
@@ -58785,6 +59034,19 @@ canvasEl.addEventListener('pointermove', (e) => {
     canvasEl.classList.toggle('over-surface', !!s);
     return;
   }
+  /* 悬停在署名铭牌上：手型 + 铜面提亮，让人知道这是能点的 */
+  if (mode !== 'orbit') {
+    const link = pickLink(e);
+    const onLink = link !== null;
+    canvasEl.style.cursor = onLink ? 'pointer' : 'grab';
+    if (onLink !== !!hoveredLink) {
+      if (hoveredLink) hoveredLink.mesh.material.emissiveIntensity = 0.5;
+      hoveredLink = link;
+      if (link) link.mesh.material.emissiveIntensity = 1.5;
+      markDirty();
+    }
+    if (onLink) { highlight(null); return; }
+  }
   const s = pickSurface(e);
   highlight(s ? s.key : null);
   canvasEl.style.cursor = s ? 'pointer' : 'grab';
@@ -58792,6 +59054,16 @@ canvasEl.addEventListener('pointermove', (e) => {
 
 function endDrag(e) {
   if (mode === 'orbit' && !dragInfo.moved) {
+    /* 先看是不是点在署名铭牌上：是就跳转，不回落到选面 */
+    const link = pickLink(e);
+    if (link) {
+      window.open(link.url, '_blank', 'noopener');
+      toast(`打开 ${link.url.replace('https://', '')}`);
+      mode = null;
+      canvasEl.classList.remove('dragging');
+      markDirty();
+      return;
+    }
     const s = pickSurface(e);
     if (s) selectSurface(s.key === selectedSurface ? null : s.key);
   }
@@ -59432,15 +59704,35 @@ if (location.search.includes('selftest')) {
   /* 窗外城市：设计师指定的实拍夜景，夜/昼两张贴图来自同一张照片，
      并对齐到落地窗的可见 UV 区（不能只剩中段或把楼拉变形）。 */
   step('cityPhoto', () => {
-    const n = viewTex.night, d = viewTex.day;
-    const ok = n && d && n !== d && n.image && d.image
+    const n = viewTex.night, d = viewTex.day, k = viewTex.dusk;
+    const ok = n && d && k && n !== d && n !== k && d !== k
+      && n.image && d.image && k.image
       && n.image.width === 1080 && n.image.height === 470
       && n.repeat.x > 1 && n.repeat.y > 1      // 可见窗口重映射生效
       && Math.abs(n.repeat.x - d.repeat.x) < 1e-9
+      && Math.abs(n.repeat.x - k.repeat.x) < 1e-9
       && CITY_PHOTO_URL.startsWith('data:image/jpeg;base64,')
       && CITY_PHOTO_URL.length > 100000;        // 单文件版必须内联，不能外链
-    return ok ? `ok(${n.image.width}x${n.image.height},uv=${n.repeat.x.toFixed(2)}/${n.repeat.y.toFixed(2)},inline)`
+    return ok ? `ok(3档 ${n.image.width}x${n.image.height},uv=${n.repeat.x.toFixed(2)}/${n.repeat.y.toFixed(2)},inline)`
       : 'FAIL';
+  });
+  /* 署名铭牌：两块都在场、坐标在场景内、链接正确、能被射线拾取到。
+     拾取必须在屏幕上的实际位置试，不能拿世界坐标冒充。 */
+  step('signPlates', () => {
+    if (LINK_SPOTS.length !== 2) return `FAIL(count=${LINK_SPOTS.length})`;
+    const urls = LINK_SPOTS.map((s) => s.url).sort().join('|');
+    const want = 'https://github.com/karlmoriaty|https://x.com/karlmoriaty';
+    if (urls !== want) return `FAIL(urls=${urls})`;
+    /* 逐一投影到屏幕，再在该像素上做射线拾取，确认点得到自己 */
+    const hitOk = LINK_SPOTS.every((s) => {
+      const p = s.mesh.getWorldPosition(new THREE.Vector3()).project(camera);
+      const cx = (p.x * 0.5 + 0.5) * window.innerWidth;
+      const cy = (-p.y * 0.5 + 0.5) * window.innerHeight;
+      if (cx < 0 || cx > window.innerWidth || cy < 0 || cy > window.innerHeight) return false;
+      const got = pickLink({ clientX: cx, clientY: cy });
+      return got && got.mesh === s.mesh;
+    });
+    return hitOk ? 'ok(2 plates, clickable, urls)' : 'FAIL(pick or offscreen)';
   });
   /* 电影级后处理：必须先跑一次 renderFrame()，uniform 才会绑定到 RT。
      检查链路接通、RT 已建、参数有效、失败能回退。 */
@@ -59674,6 +59966,13 @@ if (location.search.includes('selftest')) {
 
 /* 调试探针：?probe=1 时暴露拾取函数，用来定位画面上的可疑对象（只读，不改状态） */
 if (location.search.includes('probe')) {
+  window.__scene = scene;
+  window.__cam = camera;
+  window.__THREE = THREE;
+  window.__cityWeights = cityWeights;
+  window.__cityOverlay = cityOverlay;
+  window.__state = state;
+  window.__LINK_SPOTS = LINK_SPOTS;
   window.__probe = (cx, cy) => {
     const ndc = new THREE.Vector2(
       (cx / window.innerWidth) * 2 - 1,
