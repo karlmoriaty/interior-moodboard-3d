@@ -57508,67 +57508,87 @@ scene.add(winGlass);
    结构（楼群轮廓、窗格）完全来自原图，不会有"一块块长方形"。 */
 function gradeDayFromPhoto(img, g, W, H) {
   g.clearRect(0, 0, W, H);
-  g.drawImage(img, 0, 0, W, H);
+
+  /* 轻微软化：窗灯点阵在密集区太碎，blur 1.3px 并成肌理又不糊轮廓。 */
+  const base = document.createElement("canvas");
+  base.width = W; base.height = H;
+  const bg2 = base.getContext("2d");
+  bg2.filter = "blur(1.3px)";
+  bg2.drawImage(img, 0, 0, W, H);
+  bg2.filter = "none";
+  g.drawImage(base, 0, 0);
+
   const id = g.getImageData(0, 0, W, H);
   const d = id.data;
 
-  /* 参数分组：
-     LIFT / GAMMA / GAIN —— 影调（抬多少暗部、中间调在哪、总共给多少亮度）
-     SAT —— 去饱和程度。这张照片是夜城，霓虹红绿蓝到处都是，
-            不去掉的话不管怎么提亮都还是"夜里开灯"。
-     COOL —— 蓝调强度。清亮走清晨蓝调，跟暖光的琥珀黄昏、沉静的深夜拉开。 */
-  const LIFT = 0.235;
-  const GAMMA = 0.42;
-  const GAIN = 0.78;
-  const SAT = 0.12;
-  const COOL = 0.26;
+  /* ---------- 色调：做成清晨 ---------- */
+  /* 这张素材的本质是"入夜后的城市"，几千扇窗都亮着。
+     硬做正午的结果必然是两种：要么白成一片，要么满城灯火还在。
+     所以走"清晨蓝调"——天光刚起、灯还没灭的那一段，
+     既有明亮的天，也保得住这座城市真实的颜色和结构。 */
+  const LIFT = 0.175;
+  const GAMMA = 0.46;
+  const GAIN = 0.86;
+  const SAT = 0.86;
+  const HAZE = 0.035;
 
   for (let i = 0; i < d.length; i += 4) {
     let r = d[i] / 255, gg = d[i + 1] / 255, b = d[i + 2] / 255;
     const l = 0.2126 * r + 0.7152 * gg + 0.0722 * b;
 
-    /* ① 影调：提暗部、压高光。亮窗只保留一点点溢出，不爆白块。 */
+    /* ① 影调：抬暗部，高光滚降。滚降保住灯的形状，不糊成白块。 */
     let y = LIFT + GAIN * Math.pow(l, GAMMA);
-    if (y > 0.62) y = 0.62 + (y - 0.62) * 0.30;
+    if (y > 0.74) y = 0.74 + (y - 0.74) * 0.48;
     const k = l > 1e-4 ? y / l : 0;
     r *= k; gg *= k; b *= k;
 
-    /* ② 去饱和到接近单色。留 12% 只是为了不让它死板 ——
-       这张照片的霓虹红绿蓝太杂，留多了就会在窗上看到粉紫斑。 */
+    /* ② 饱和度：这张照片的颜色是资产，不要压掉 */
     const l2 = 0.2126 * r + 0.7152 * gg + 0.0722 * b;
     r = l2 + (r - l2) * SAT;
     gg = l2 + (gg - l2) * SAT;
     b = l2 + (b - l2) * SAT;
 
-    /* ②b 轻 S 曲线：压平高光后楼体会发糊，补一点中间调对比找回结构 */
+    /* ③ S 曲线：找回中间调对比 */
     const l3 = 0.2126 * r + 0.7152 * gg + 0.0722 * b;
-    const sc = Math.min(1, Math.max(0, (l3 - 0.5) * 1.14 + 0.5)) - l3;
+    const sc = Math.min(1, Math.max(0, (l3 - 0.5) * 1.24 + 0.5)) - l3;
     r += sc; gg += sc; b += sc;
 
-    /* ③ 蓝调：整体向冷走。这步是"清晨"的来源，不是靠加蓝天空。 */
-    const coolK = COOL * (1 - Math.min(1, l2 / 0.85) * 0.45);
-    r *= 1 - coolK * 0.30;
-    gg *= 1 - coolK * 0.10;
-    b = b + (1 - b) * coolK * 0.34;
+    /* ④ 分离色调：亮部偏冷（天光）、暗部偏靛 */
+    const l4 = 0.2126 * r + 0.7152 * gg + 0.0722 * b;
+    const hi = Math.min(1, Math.max(0, (l4 - 0.44) / 0.48));
+    const lo = Math.min(1, Math.max(0, (0.44 - l4) / 0.44));
+    r += hi * -0.014 + lo * -0.020;
+    gg += hi * 0.012 + lo * -0.002;
+    b += hi * 0.048 + lo * 0.040;
 
-    /* ④ 空气雾：统一色温，把远处的楼压进大气里 */
-    const HAZE = 0.12;
-    r += (0.72 - r) * HAZE;
-    gg += (0.80 - gg) * HAZE;
-    b += (0.90 - b) * HAZE;
+    /* ⑤ 极淡大气雾 */
+    r += (0.78 - r) * HAZE;
+    gg += (0.85 - gg) * HAZE;
+    b += (0.93 - b) * HAZE;
 
     d[i] = r * 255; d[i + 1] = gg * 255; d[i + 2] = b * 255;
   }
   g.putImageData(id, 0, 0);
 
-  /* 顶部极轻的提亮：原图天空最暗，压平后会显得头重脚轻。
-     用全高渐变，不会出现硬边。 */
-  const skyLift = g.createLinearGradient(0, 0, 0, H);
-  skyLift.addColorStop(0, "rgba(188,214,238,0.34)");
-  skyLift.addColorStop(0.42, "rgba(188,214,238,0.12)");
-  skyLift.addColorStop(1, "rgba(188,214,238,0)");
-  g.fillStyle = skyLift;
-  g.fillRect(0, 0, W, H);
+  /* ---------- 天空：深蓝 → 地平线暖光 ---------- */
+  /* "清晨"这件事必须由天空说清楚。只把整体提亮是做不出早晨的，
+     必须有"天顶深、地平线亮且偏暖"这个方向性，眼睛才认。 */
+  const sky = g.createLinearGradient(0, 0, 0, H * 0.66);
+  sky.addColorStop(0, "rgba(96,140,196,0.58)");
+  sky.addColorStop(0.24, "rgba(132,170,212,0.48)");
+  sky.addColorStop(0.52, "rgba(176,203,226,0.32)");
+  sky.addColorStop(0.78, "rgba(214,220,224,0.22)");
+  sky.addColorStop(1, "rgba(216,224,228,0)");
+  g.fillStyle = sky;
+  g.fillRect(0, 0, W, H * 0.66);
+
+  /* 地平线一条暖光带：太阳还没出来，但天边已经亮了 */
+  const horizonGlow = g.createLinearGradient(0, H * 0.26, 0, H * 0.52);
+  horizonGlow.addColorStop(0, "rgba(240,238,230,0)");
+  horizonGlow.addColorStop(0.55, "rgba(240,238,230,0.14)");
+  horizonGlow.addColorStop(1, "rgba(240,238,230,0)");
+  g.fillStyle = horizonGlow;
+  g.fillRect(0, H * 0.26, W, H * 0.26);
 }
 
 const viewTex = (() => {
