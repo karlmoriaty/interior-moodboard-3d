@@ -57553,36 +57553,163 @@ const viewTex = (() => {
       dusk.tex.needsUpdate = true;
     }
 
-    /* ---------- 白昼版（clear 预设 12.4 用） ---------- */
-    /* 旧版只把夜景提亮 + 去饱和，天空仍是黑的，看起来像"阴天的夜"。
-       现在分两步：先把楼体提亮压反，再用一层天空渐变真正换掉黑天。
-       天空区域约在画面上 30%，渐变到 55% 处收干净。 */
+    /* ---------- 白昼版（clear 预设 12.4 用）：重绘，不是提亮 ---------- */
+    /* 提亮夜景这条路走不通。实测出来是"一块蓝矩形贴在夜空上"：
+       天空有硬边和色阶断层、楼体仍是满窗灯火的夜楼，只是被雾糊住。
+       改成按白天的成像规律重画：
+       ① 从原图提取天际线轮廓 → 剪影保留，交叉淡入时不会重影；
+       ② 楼体亮度做幂次压缩（把夜景的亮窗压下去、暗楼体提上来）；
+       ③ 空气透视：越靠近天际线越淡，远处楼几乎化进天里；
+       ④ 天空用多段渐变 + 抖动噪声，消除 banding。 */
     {
+      const W = PHOTO_W, H = PHOTO_H;
       const g = day.ctx;
-      g.filter = 'brightness(2.35) saturate(0.55) contrast(0.62)';
-      g.drawImage(img, 0, 0, PHOTO_W, PHOTO_H);
-      g.filter = 'none';
 
-      /* 天空：真正换成蓝天。不用半透明"蒙"，而是高不透明度的渐变覆盖，
-         否则底下的黑天会透上来，整幅还是脏灰。
-         注意：窗只截到照片 y 152–345（中段），所以渐变必须压到 0.7 才盖得住。 */
-      const sky = g.createLinearGradient(0, 0, 0, PHOTO_H * 0.72);
-      sky.addColorStop(0, 'rgba(58,124,198,.98)');
-      sky.addColorStop(0.30, 'rgba(96,158,218,.96)');
-      sky.addColorStop(0.58, 'rgba(150,192,226,.90)');
-      sky.addColorStop(0.80, 'rgba(198,214,228,.72)');
-      sky.addColorStop(1, 'rgba(214,220,222,0)');
-      g.fillStyle = sky;
-      g.fillRect(0, 0, PHOTO_W, PHOTO_H * 0.72);
+      /* 原图与模糊版：用"局部反差"区分楼体与夜空。
+         夜空是平滑渐变（反差低），楼体有窗格（反差高）。 */
+      const tmp = document.createElement('canvas');
+      tmp.width = W; tmp.height = H;
+      const tg = tmp.getContext('2d');
+      tg.drawImage(img, 0, 0, W, H);
+      const srcData = tg.getImageData(0, 0, W, H).data;
 
-      /* 地平线一层暖白雾：白天城市远处总有一层灰白空气。
-         这层雾同时负责"压掉楼体上过亮的窗灯"——白天还满窗灯火会读成夜景。 */
-      const haze = g.createLinearGradient(0, PHOTO_H * 0.40, 0, PHOTO_H);
-      haze.addColorStop(0, 'rgba(232,234,228,.46)');
-      haze.addColorStop(0.45, 'rgba(216,218,212,.34)');
-      haze.addColorStop(1, 'rgba(198,198,192,.24)');
-      g.fillStyle = haze;
-      g.fillRect(0, PHOTO_H * 0.40, PHOTO_W, PHOTO_H * 0.60);
+      const blurC = document.createElement('canvas');
+      blurC.width = W; blurC.height = H;
+      const blg = blurC.getContext('2d');
+      blg.filter = 'blur(5px)';
+      blg.drawImage(img, 0, 0, W, H);
+      blg.filter = 'none';
+      const blurData = blg.getImageData(0, 0, W, H).data;
+
+      const lumAt = (d, i) => (d[i] * 0.2126 + d[i + 1] * 0.7152 + d[i + 2] * 0.0722) / 255;
+      const diffAt = (x, y) => {
+        const i = (y * W + x) * 4;
+        return Math.abs(lumAt(srcData, i) - lumAt(blurData, i));
+      };
+
+      /* ① 每列天际线：自上而下第一个"反差够大、且下方持续有反差"的点。
+            支撑窗口放到 10px 且要求 7 个通过——窗口太短会把细天线也算成楼顶，
+            实测会出现一排针状尖刺。 */
+      const sky = new Int16Array(W);
+      for (let x = 0; x < W; x++) {
+        let found = -1;
+        for (let y = 2; y < H - 12; y++) {
+          if (diffAt(x, y) <= 0.055) continue;
+          let support = 0;
+          for (let k = 1; k <= 14; k++) if (diffAt(x, y + k) > 0.045) support++;
+          if (support >= 10) { found = y; break; }
+        }
+        sky[x] = found < 0 ? -1 : found;
+      }
+      /* 失败列用邻列补齐，再做 9 列滑动平均去锯齿 */
+      let lastGood = -1;
+      for (let x = 0; x < W; x++) {
+        if (sky[x] >= 0) lastGood = sky[x];
+        else if (lastGood >= 0) sky[x] = lastGood;
+      }
+      lastGood = -1;
+      for (let x = W - 1; x >= 0; x--) {
+        if (sky[x] >= 0) lastGood = sky[x];
+        else sky[x] = lastGood >= 0 ? lastGood : Math.round(H * 0.32);
+      }
+      const skyS = new Int16Array(W);
+      for (let x = 0; x < W; x++) {
+        let acc = 0, n = 0;
+        for (let k = -4; k <= 4; k++) {
+          const xx = x + k;
+          if (xx < 0 || xx >= W) continue;
+          acc += sky[xx]; n++;
+        }
+        /* 天际线不允许高过画面 8%：那里一定是天空 */
+        skyS[x] = Math.min(Math.max(Math.round(acc / n), Math.round(H * 0.08)), Math.round(H * 0.72));
+      }
+      /* 压平台顶：真实楼顶是水平的，不是锯齿。
+         逐列比较，落差小的直接吸附到左邻；再按 4px 量化一次。 */
+      for (let x = 1; x < W; x++) {
+        if (Math.abs(skyS[x] - skyS[x - 1]) < 7) skyS[x] = skyS[x - 1];
+      }
+      for (let x = 0; x < W; x++) skyS[x] = Math.round(skyS[x] / 3) * 3;
+
+      /* ② 重绘 */
+      const out = g.createImageData(W, H);
+      const od = out.data;
+      let seed = 9173;
+      const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
+
+      /* 天空：三段 lerp。注意窗只截到贴图 y 152–345（可见带偏下），
+         所以饱和的蓝必须一直压到 t≈0.78，否则窗里看到的是最淡那一段，
+         整片天是灰白的（这一版之前就是这个问题）。 */
+      const skyCol = (y) => {
+        const t = clamp(y / (H * 0.66), 0, 1);
+        const A = [56, 120, 194];    // 天顶
+        const B = [106, 166, 220];   // 可见带主体
+        const C = [208, 222, 230];   // 贴地平线
+        if (t < 0.78) {
+          const k = t / 0.78;
+          return [A[0] + (B[0] - A[0]) * k, A[1] + (B[1] - A[1]) * k, A[2] + (B[2] - A[2]) * k];
+        }
+        const k = (t - 0.78) / 0.22;
+        return [B[0] + (C[0] - B[0]) * k, B[1] + (C[1] - B[1]) * k, B[2] + (C[2] - B[2]) * k];
+      };
+      /* 太阳方向的一点漫射光，让天空不是一块平涂 */
+      const sunX = W * 0.24, sunY = H * 0.06, sunR = W * 0.62;
+
+      for (let y = 0; y < H; y++) {
+        const sc = skyCol(y);                 // 0–255 分量
+        const sn = [sc[0] / 255, sc[1] / 255, sc[2] / 255];   // 归一化，混色要用
+        for (let x = 0; x < W; x++) {
+          const i = (y * W + x) * 4;
+          const o = i;
+          let r, gg, b;
+
+          if (y < skyS[x]) {
+            /* ---- 天空 ---- */
+            r = sc[0]; gg = sc[1]; b = sc[2];
+            /* 太阳方向的柔光 */
+            const dx = (x - sunX) / sunR, dy2 = (y - sunY) / (sunR * 0.75);
+            const glow = Math.max(0, 1 - Math.sqrt(dx * dx + dy2 * dy2));
+            const gk = glow * glow * 0.42;
+            r += (255 - r) * gk; gg += (250 - gg) * gk; b += (238 - b) * gk;
+            /* 抖动：不加的话大面积渐变会出现横向色阶断层（实测确实有） */
+            const dth = (rnd() - 0.5) * 1.6;
+            r += dth; gg += dth; b += dth;
+          } else {
+            /* ---- 楼体 ---- */
+            /* 关键：夜间"窗格亮、墙面暗"是反的。白天玻璃反天光，窗格应比墙面暗。
+               所以用 (锐利亮度 − 模糊亮度) 作为"这里原本是一扇亮窗"的度量，
+               把它从墙面基色里减掉——夜里的亮窗就变成白天的暗窗。 */
+            const lS = lumAt(srcData, i);
+            const lB = lumAt(blurData, i);
+            const win = clamp((lS - lB) * 2.4, 0, 1);     // 0=墙面 1=窗格
+            /* 墙面基色：跟着模糊亮度轻微起伏；再加一层随 x 变化的低频明暗，
+               让相邻楼体有受光/背光的差别，不然整排会像一张纸。 */
+            const band = Math.sin(x * 0.011) * 0.045 + Math.sin(x * 0.037 + 1.7) * 0.028;
+            /* 冷暖交替：真实城市里玻璃幕墙偏冷、石材/涂装偏暖，
+               全冷会让整幅读成"单色模型"。幅度压得很小，只做质感差别。 */
+            const warmTint = Math.sin(x * 0.0062 + 2.1);
+            let shade = 0.40 + (lB - 0.18) * 0.35 - 0.22 * win + band;
+            shade = clamp(shade, 0.17, 0.58);
+            let br = shade * (0.955 + warmTint * 0.035);
+            let bg2 = shade * 1.0;
+            let bb = shade * (1.05 - warmTint * 0.035);
+            /* 空气透视：只在贴近天际线的一窄条里发白，往下迅速变实。
+               范围给大了整排楼会像雾做的（实测 95px 时下半屏全是灰白）。 */
+            const dy3 = y - skyS[x];
+            const near = clamp(1 - dy3 / 60, 0, 1);
+            const hazeAmt = 0.02 + 0.30 * near * near;
+            br += (sn[0] - br) * hazeAmt;
+            bg2 += (sn[1] - bg2) * hazeAmt;
+            bb += (sn[2] - bb) * hazeAmt;
+            r = br * 255; gg = bg2 * 255; b = bb * 255;
+            const dth = (rnd() - 0.5) * 1.4;
+            r += dth; gg += dth; b += dth;
+          }
+          od[o] = r; od[o + 1] = gg; od[o + 2] = b; od[o + 3] = 255;
+        }
+      }
+      g.putImageData(out, 0, 0);
+      /* 不再额外叠"地平线亮带"：那条渐变会在天空里留下一道横贯的白带，
+         看着像贴纸。地平线发白的效果已经由楼体分支里的空气透视给出了。 */
       day.tex.needsUpdate = true;
     }
 
@@ -59973,6 +60100,7 @@ if (location.search.includes('probe')) {
   window.__cityOverlay = cityOverlay;
   window.__state = state;
   window.__LINK_SPOTS = LINK_SPOTS;
+  window.__viewTex = viewTex;
   window.__probe = (cx, cy) => {
     const ndc = new THREE.Vector2(
       (cx / window.innerWidth) * 2 - 1,
