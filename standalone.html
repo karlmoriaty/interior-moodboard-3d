@@ -57496,190 +57496,79 @@ scene.add(winGlass);
    重绘，出来的必然是白墙配黑斑。照片里没有白天的信息，再怎么算也造不出来。
    所以改成从零画一座城：天空、太阳、云、五层由远及近的楼群，
    每层按空气透视向天色混合，楼体上有层线与竖梃——干净的几何，没有噪点。 */
-function paintDayCity(g, W, H) {
-  let seed = 20261117;
-  const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
-  const rr = (a, b) => a + rnd() * (b - a);
-  const mix = (a, b, t) => [
-    a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t,
-  ];
-  const css = (c, a) => (a === undefined
-    ? `rgb(${c[0] | 0},${c[1] | 0},${c[2] | 0})`
-    : `rgba(${c[0] | 0},${c[1] | 0},${c[2] | 0},${a})`);
-  const clamp01 = (v) => (v < 0 ? 0 : v > 1 ? 1 : v);
+/* ---------- 白昼版：对原图做色调映射，不改结构 ---------- */
+/* 设计师的要求很明确：就用那张照片，改色调。之前失败不是因为"不该改色"，
+   而是改得粗暴：先把 saturate 压到 0.30 变灰，再用 brightness(2.35) 顶曝光，
+   亮窗直接爆成白块、暗部被拉成死灰。
+   现在改成逐像素的正规曲线：
+     ① 抬暗部 / 压高光（幂次曲线 + 高光滚降），亮窗变成柔和光斑而不是白块；
+     ② 补回饱和度（曲线压缩会掉色）；
+     ③ 暗部偏冷、高光中性，模拟白天的天光；
+     ④ 少量空气雾统一色温。
+   结构（楼群轮廓、窗格）完全来自原图，不会有"一块块长方形"。 */
+function gradeDayFromPhoto(img, g, W, H) {
+  g.clearRect(0, 0, W, H);
+  g.drawImage(img, 0, 0, W, H);
+  const id = g.getImageData(0, 0, W, H);
+  const d = id.data;
 
-  const HZ = [208, 221, 230];        // 地平线天色（最远的楼要混到它上面）
-  const FAR = [148, 168, 188];       // 最远楼体
-  const NEAR = [58, 71, 88];         // 最近楼体
-  /* 地平线：窗只截到贴图 y 152–345 这一段，构图必须按这个带来排。 */
-  const HORIZON = Math.round(H * 0.60);
+  /* 参数分组：
+     LIFT / GAMMA / GAIN —— 影调（抬多少暗部、中间调在哪、总共给多少亮度）
+     SAT —— 去饱和程度。这张照片是夜城，霓虹红绿蓝到处都是，
+            不去掉的话不管怎么提亮都还是"夜里开灯"。
+     COOL —— 蓝调强度。清亮走清晨蓝调，跟暖光的琥珀黄昏、沉静的深夜拉开。 */
+  const LIFT = 0.235;
+  const GAMMA = 0.42;
+  const GAIN = 0.78;
+  const SAT = 0.12;
+  const COOL = 0.26;
 
-  /* ---- 天空 ---- */
-  const sky = g.createLinearGradient(0, 0, 0, HORIZON + 40);
-  sky.addColorStop(0, '#356aa8');
-  sky.addColorStop(0.30, '#5a8fc6');
-  sky.addColorStop(0.62, '#8db5d6');
-  sky.addColorStop(0.86, '#b9cedd');
-  sky.addColorStop(1, '#cfdce4');
-  g.fillStyle = sky;
-  g.fillRect(0, 0, W, H);
-
-  /* ---- 太阳方向的一团柔光：让天空不是一块平涂 ---- */
-  const sunX = W * 0.20, sunY = -H * 0.10, sunR = W * 0.72;
-  const glow = g.createRadialGradient(sunX, sunY, 0, sunX, sunY, sunR);
-  glow.addColorStop(0, 'rgba(255,247,232,.62)');
-  glow.addColorStop(0.28, 'rgba(255,245,228,.22)');
-  glow.addColorStop(1, 'rgba(255,245,228,0)');
-  g.fillStyle = glow;
-  g.fillRect(0, 0, W, HORIZON + 60);
-
-  /* ---- 几道极淡的横向云 ---- */
-  for (let i = 0; i < 8; i++) {
-    const cy = rr(H * 0.04, H * 0.40);
-    const rx = rr(W * 0.14, W * 0.42);
-    const ry = rx * rr(0.05, 0.12);
-    const cx = rr(-W * 0.15, W * 0.95);
-    const cg = g.createRadialGradient(cx, cy, 0, cx, cy, rx);
-    cg.addColorStop(0, `rgba(255,255,255,${rr(0.08, 0.20).toFixed(3)})`);
-    cg.addColorStop(0.6, `rgba(255,255,255,${rr(0.03, 0.08).toFixed(3)})`);
-    cg.addColorStop(1, 'rgba(255,255,255,0)');
-    g.save();
-    g.translate(cx, cy);
-    g.scale(1, ry / rx);
-    g.translate(-cx, -cy);
-    g.fillStyle = cg;
-    g.beginPath(); g.arc(cx, cy, rx, 0, Math.PI * 2); g.fill();
-    g.restore();
-  }
-
-  /* ---- 六层楼群，由远及近 ---- */
-  /* 关键：每层楼宽度、楼顶高度都要有分布，不能一排等高的矩形；
-     近处层要明显更暗、更宽，并且带立面肌理（楼层线 + 竖梃 + 檐口高光），
-     远处层尽量淡、允许被前面的楼遮住大半 —— 层次靠这个拉开。 */
-  /* 六层楼群。构图按「窗只截到 y 152–345」来排：
-     最远的楼顶落在 y≈205（窗里能看到约 50px 的天），越近楼顶越低 ——
-     从高层往下看就是这样，近楼的屋顶在视线下方，不会顶到天。 */
-  const layers = [
-    { tint: 0.93, topA: 0.445, topB: 0.500, base: HORIZON + 2,   wA: 15, wB: 48,  gapA: 2, gapB: 9,  step: 0,  pier: 0,  detail: 0 },
-    { tint: 0.82, topA: 0.450, topB: 0.515, base: HORIZON + 14,  wA: 21, wB: 62,  gapA: 2, gapB: 10, step: 0,  pier: 0,  detail: 0 },
-    { tint: 0.64, topA: 0.462, topB: 0.530, base: HORIZON + 32,  wA: 28, wB: 84,  gapA: 1, gapB: 9,  step: 15, pier: 0,  detail: 0.4 },
-    { tint: 0.44, topA: 0.482, topB: 0.556, base: HORIZON + 58,  wA: 27, wB: 88,  gapA: 1, gapB: 7,  step: 13, pier: 18, detail: 0.7 },
-    { tint: 0.24, topA: 0.512, topB: 0.596, base: HORIZON + 100, wA: 36, wB: 104, gapA: 0, gapB: 4,  step: 11, pier: 15, detail: 1 },
-    { tint: 0.06, topA: 0.560, topB: 0.660, base: H + 46,       wA: 56, wB: 136, gapA: 0, gapB: 2,  step: 10, pier: 13, detail: 1.2 },
-  ];
-
-  for (const L of layers) {
-    let x = -rr(20, 80);
-    while (x < W + 60) {
-      const bw = rr(L.wA, L.wB);
-      /* 楼顶高度：区间内随机，另有 12% 概率做成明显更高的塔，
-         避免整排楼顶齐平（齐平会一眼看成条形图）。 */
-      let topF = rr(L.topA, L.topB);
-      /* 12% 拔高成塔、16% 压成矮楼。两种都要有——
-         只有随机小起伏时，整排楼会齐得像条形图（前面那版就是这样）。 */
-      if (rnd() < 0.12) topF -= rr(0.035, 0.085);
-      else if (rnd() < 0.16) topF += rr(0.06, 0.15);
-      const top = topF * H;
-      const base = L.base;
-      if (base - top < 14) { x += bw * 0.5; continue; }
-
-      /* 楼体颜色：远→近在 FAR/NEAR 之间插值，再向天色混合。 */
-      let col = mix(FAR, NEAR, clamp01((0.92 - L.tint) / 0.87));
-      const warm = rr(-1, 1);
-      col = [col[0] + warm * 9, col[1] + warm * 3, col[2] - warm * 8];
-      const solid = mix(col, HZ, L.tint * 0.70);
-      const bodyH = base - top;
-
-      /* 楼体主体：顶亮底暗的竖向渐变，模拟天光从上方落下 */
-      const bg = g.createLinearGradient(0, top, 0, top + bodyH);
-      bg.addColorStop(0, css(mix(solid, [255, 255, 255], 0.10 * L.detail)));
-      bg.addColorStop(0.45, css(solid));
-      bg.addColorStop(1, css(mix(solid, [8, 12, 18], 0.16 * L.detail)));
-      g.fillStyle = bg;
-      g.fillRect(x, top, bw, bodyH);
-
-      /* 檐口：楼顶一条亮线，把楼从天空里"切"出来 */
-      if (L.detail > 0.3) {
-        g.fillStyle = css(mix(solid, [255, 255, 255], 0.22 * L.detail));
-        g.fillRect(x, top, bw, Math.max(1, 1.4 * L.detail));
-      }
-
-      /* 退台 / 屋顶机房 / 天线：只在中近层加，且概率不高 */
-      if (L.detail > 0.4) {
-        if (rnd() < 0.42) {
-          const sw = bw * rr(0.28, 0.60);
-          const sh = rr(5, 13) * L.detail;
-          g.fillStyle = css(mix(solid, [255, 255, 255], 0.14));
-          g.fillRect(x + rr(2, bw - sw - 2), top - sh, sw, sh + 1);
-        }
-        if (rnd() < 0.20) {
-          g.strokeStyle = css(mix(solid, [16, 22, 30], 0.45));
-          g.lineWidth = 1;
-          const ax = x + bw * rr(0.25, 0.75);
-          g.beginPath();
-          g.moveTo(ax, top);
-          g.lineTo(ax, top - rr(9, 24) * L.detail);
-          g.stroke();
-        }
-      }
-
-      /* 立面肌理：两种做法并置。
-         ① 玻璃幕墙 —— 通长楼层带；
-         ② 砖石开窗 —— 小窗格阵列（约 35% 的中近层用）。
-         全用同一种模板复制，整片城会一眼看出是程序生成的。 */
-      if (L.step && bw > 14 && L.detail >= 0.7 && rnd() < 0.42) {
-        /* 窗格要细、要淡。做大了就成"穿孔板"，和之前那种黑斑一个观感。
-           3px 窗 + 2px 墩，alpha 压到 0.10 上下，远看只是一层竖向肌理。 */
-        const step = Math.max(5, Math.round(L.step * 0.62));
-        const wcell = 3;
-        const hcell = 2;
-        const pad = 2;
-        for (let yy = top + step; yy < base - hcell; yy += step) {
-          for (let xx = x + pad; xx < x + bw - wcell - 1; xx += wcell + pad) {
-            g.fillStyle = `rgba(16,24,34,${(0.085 + 0.045 * L.detail).toFixed(3)})`;
-            g.fillRect(xx, yy, wcell, hcell);
-          }
-        }
-        g.fillStyle = css(mix(solid, [255, 255, 255], 0.20 * L.detail));
-        g.fillRect(x, top, 1, bodyH);
-        g.fillStyle = css(mix(solid, [8, 12, 18], 0.28 * L.detail));
-        g.fillRect(x + bw - 1, top, 1, bodyH);
-      } else if (L.step && bw > 14) {
-        const step = L.step;
-        const lightA = 0.055 + 0.055 * L.detail;
-        const darkA = 0.075 + 0.065 * L.detail;
-        for (let yy = top + step; yy < base - 2; yy += step) {
-          g.fillStyle = `rgba(236,244,252,${lightA.toFixed(3)})`;
-          g.fillRect(x + 1, yy, bw - 2, 1);
-          g.fillStyle = `rgba(10,16,24,${darkA.toFixed(3)})`;
-          g.fillRect(x + 1, yy + 1, bw - 2, 1);
-        }
-        /* 竖梃：把横向的楼层线切成窗格 */
-        if (L.pier && bw > L.pier * 2) {
-          g.fillStyle = `rgba(10,16,24,${(0.05 + 0.05 * L.detail).toFixed(3)})`;
-          for (let xx = x + L.pier; xx < x + bw - 2; xx += L.pier) {
-            g.fillRect(xx, top + 2, 1, base - top - 3);
-          }
-        }
-        /* 左缘受光 / 右缘背光：一条边就够，楼体立刻有体积 */
-        g.fillStyle = css(mix(solid, [255, 255, 255], 0.20 * L.detail));
-        g.fillRect(x, top, 1, bodyH);
-        g.fillStyle = css(mix(solid, [8, 12, 18], 0.28 * L.detail));
-        g.fillRect(x + bw - 1, top, 1, bodyH);
-      }
-
-      x += bw + (L.gapB ? rr(L.gapA, L.gapB) : L.gapA);
-    }
-  }
-
-  /* ---- 极轻的颗粒：和实拍照片的质感接得上，不然一眼看出是矢量图 ---- */
-  const img = g.getImageData(0, 0, W, H);
-  const d = img.data;
   for (let i = 0; i < d.length; i += 4) {
-    const n = (rnd() - 0.5) * 3.2;
-    d[i] += n; d[i + 1] += n; d[i + 2] += n;
+    let r = d[i] / 255, gg = d[i + 1] / 255, b = d[i + 2] / 255;
+    const l = 0.2126 * r + 0.7152 * gg + 0.0722 * b;
+
+    /* ① 影调：提暗部、压高光。亮窗只保留一点点溢出，不爆白块。 */
+    let y = LIFT + GAIN * Math.pow(l, GAMMA);
+    if (y > 0.62) y = 0.62 + (y - 0.62) * 0.30;
+    const k = l > 1e-4 ? y / l : 0;
+    r *= k; gg *= k; b *= k;
+
+    /* ② 去饱和到接近单色。留 12% 只是为了不让它死板 ——
+       这张照片的霓虹红绿蓝太杂，留多了就会在窗上看到粉紫斑。 */
+    const l2 = 0.2126 * r + 0.7152 * gg + 0.0722 * b;
+    r = l2 + (r - l2) * SAT;
+    gg = l2 + (gg - l2) * SAT;
+    b = l2 + (b - l2) * SAT;
+
+    /* ②b 轻 S 曲线：压平高光后楼体会发糊，补一点中间调对比找回结构 */
+    const l3 = 0.2126 * r + 0.7152 * gg + 0.0722 * b;
+    const sc = Math.min(1, Math.max(0, (l3 - 0.5) * 1.14 + 0.5)) - l3;
+    r += sc; gg += sc; b += sc;
+
+    /* ③ 蓝调：整体向冷走。这步是"清晨"的来源，不是靠加蓝天空。 */
+    const coolK = COOL * (1 - Math.min(1, l2 / 0.85) * 0.45);
+    r *= 1 - coolK * 0.30;
+    gg *= 1 - coolK * 0.10;
+    b = b + (1 - b) * coolK * 0.34;
+
+    /* ④ 空气雾：统一色温，把远处的楼压进大气里 */
+    const HAZE = 0.12;
+    r += (0.72 - r) * HAZE;
+    gg += (0.80 - gg) * HAZE;
+    b += (0.90 - b) * HAZE;
+
+    d[i] = r * 255; d[i + 1] = gg * 255; d[i + 2] = b * 255;
   }
-  g.putImageData(img, 0, 0);
+  g.putImageData(id, 0, 0);
+
+  /* 顶部极轻的提亮：原图天空最暗，压平后会显得头重脚轻。
+     用全高渐变，不会出现硬边。 */
+  const skyLift = g.createLinearGradient(0, 0, 0, H);
+  skyLift.addColorStop(0, "rgba(188,214,238,0.34)");
+  skyLift.addColorStop(0.42, "rgba(188,214,238,0.12)");
+  skyLift.addColorStop(1, "rgba(188,214,238,0)");
+  g.fillStyle = skyLift;
+  g.fillRect(0, 0, W, H);
 }
 
 const viewTex = (() => {
@@ -57748,7 +57637,7 @@ const viewTex = (() => {
 
     /* ---------- 白昼版（clear 预设 12.4 用）：从零绘制 ---------- */
     /* 不再从夜景派生。照片里没有白天的信息，加工出来必然是白墙配黑斑。 */
-    paintDayCity(day.ctx, PHOTO_W, PHOTO_H);
+    gradeDayFromPhoto(img, day.ctx, PHOTO_W, PHOTO_H);
     day.tex.needsUpdate = true;
 
     /* 地面倒影也依赖这张图：图片就绪后通知外面重画 */
