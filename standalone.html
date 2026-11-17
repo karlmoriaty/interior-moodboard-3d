@@ -55757,7 +55757,16 @@ const ORBIT_DEFAULT = { radius: 5.4, theta: 0.62, phi: 1.34 };
    往左一拖就撞墙，实测 120 px 拖动两次都卡在同一个边界上。
    相机在房间外时侧墙单面被背面剔除，放宽后仍能从更多角度看进去，不穿帮。 */
 /* 房间放大后滚轮要能退到看得见整面玻璃的距离 */
-const THETA_RANGE = [0.02, 1.42], PHI_RANGE = [0.32, 1.50], RADIUS_RANGE = [1.9, 9.5];
+/* 水平角放开到整圈。旧值 [0.02, 1.42] 只能看前方与左墙，
+   转到右边/后方会撞边界。用角度归一化代替 clamp：连续拖拽跨 2π 时位置不跳。 */
+const PHI_RANGE = [0.32, 1.50], RADIUS_RANGE = [1.9, 9.5];
+const TAU = Math.PI * 2;
+const wrapAngle = (a) => ((a % TAU) + TAU) % TAU;
+/* 相机必须留在房间内。房间 11.2 宽 × 10 深，窗墙 z=-4.9、后墙 z=5.1。
+   固定 5.4 半径的圆绕到后方会穿出窗墙、绕到左侧会贴到挂轴背面（实测全黑）。
+   这里按方位角求到四面墙的距离，把水平半径收进去。 */
+const ROOM_BOUNDS = { halfW: 5.6, backZ: -4.9, frontZ: 5.1 };
+const WALL_MARGIN = 0.55;
 
 /* 平移上限（米）：跟着 11.2×10.0×3.9 的新房间放宽，
    否则房间大了却只能挪原来那一小步，方向键会显得没用。 */
@@ -55781,10 +55790,22 @@ function placeCamera() {
   const tx = orbit.target.x + orbit.pan.x;
   const ty = orbit.target.y + orbit.pan.y;
   const tz = orbit.target.z + orbit.pan.z;
+  const sx = Math.sin(t), cz = Math.cos(t);
+  /* 水平半径：默认角度下不收缩（边界距离 > 5.25），取景保持不变；
+     转到后方/侧面时才按到墙的距离收紧，相机因此始终在房间内部。 */
+  let hR = r * Math.sin(p);
+  const limX = ROOM_BOUNDS.halfW - WALL_MARGIN;
+  const zHi = ROOM_BOUNDS.frontZ - WALL_MARGIN;
+  const zLo = ROOM_BOUNDS.backZ + WALL_MARGIN;
+  if (sx > 1e-4) hR = Math.min(hR, (limX - tx) / sx);
+  else if (sx < -1e-4) hR = Math.min(hR, (-limX - tx) / sx);
+  if (cz > 1e-4) hR = Math.min(hR, (zHi - tz) / cz);
+  else if (cz < -1e-4) hR = Math.min(hR, (zLo - tz) / cz);
+  hR = Math.max(1.2, hR);
   camera.position.set(
-    tx + r * Math.sin(p) * Math.sin(t),
+    tx + hR * sx,
     ty + r * Math.cos(p),
-    tz + r * Math.sin(p) * Math.cos(t),
+    tz + hR * cz,
   );
   camera.lookAt(tx, ty, tz);
 }
@@ -57150,6 +57171,7 @@ for (const [bx, bz, bw2] of [[-1.15, 0.62, 1.7], [1.25, 0.62, 1.7]]) {
    左墙 z 从 -4.4 到 -2.2（避开边柜与门），高 2.8，落在地板上。 */
 /* 必须先声明：障子块内部会给它赋值，用 let 写在后面会落进 TDZ。 */
 let APT_SHOJI_LIGHT = null;
+let APT_BACK_LIGHT = null, APT_LAMP_LIGHT = null;
 const shojiMat = new THREE.MeshStandardMaterial({
   map: shojiPaper(), roughness: 0.94, metalness: 0,
   emissive: 0x6b5a3e, emissiveIntensity: 0.35, side: THREE.DoubleSide,
@@ -57367,6 +57389,232 @@ const aptArt = new THREE.Mesh(
 /* 画心 1.85 m：上沿 2.83 离 3.9 的天花留 1.07 m */
 aptArt.position.set(-APT.halfW + 0.06, 1.85, -1.6);
 scene.add(aptArt);
+
+/* ============================== 3.8 后墙与右墙补全 ============================== */
+/* 之前这个房间只做了窗墙(z=-4.9)、左右侧墙、天花与地板，
+   z=+5.1 那一面完全空缺。相机一旦绕到后方，看到的是城市圆柱的背面，
+   也就是一片虚空；右墙虽有墙板却没有任何陈设，转到右边只剩一块死板。
+   这里把这两面补齐，沿用同一套和风材质：护墙板 + 障子 + 壁龛 + 格栅 + 边柜。
+   所有墙面都是单面朝房间内 —— 相机在房间外时背面剔除，保留剖切看进来的效果；
+   相机在房间内时正面可见，房间才是一个完整空间。 */
+{
+  const BZ = APT.frontZ;                 // +5.1，后墙所在 z
+  const H = INTERIOR.ceilY;             // 3.9
+  const W = APT.halfW * 2;              // 11.2
+  const add = (m) => { scene.add(m); return m; };
+
+  /* ---- 后墙主体 ---- */
+  const backWallMat = aptWallMat.clone();
+  backWallMat.side = THREE.FrontSide;
+  backWallMat.shadowSide = THREE.DoubleSide;
+  aptGlowMats.push(backWallMat);
+  const backWall = new THREE.Mesh(new THREE.PlaneGeometry(W, H), backWallMat);
+  backWall.rotation.y = Math.PI;        // 法线朝 -z（朝房间内）
+  backWall.position.set(0, H / 2, BZ);
+  backWall.receiveShadow = true;
+  add(backWall);
+
+  /* 踢脚 + 护墙板竖缝：大面墙不能是一整块死板 */
+  const backSkirt = new THREE.Mesh(new THREE.BoxGeometry(W, 0.09, 0.02), aptTrimMat);
+  backSkirt.position.set(0, 0.045, BZ - 0.012);
+  add(backSkirt);
+  for (let x = -APT.halfW + 0.9; x < APT.halfW - 0.2; x += 0.9) {
+    const seam = new THREE.Mesh(new THREE.BoxGeometry(0.012, H - 0.24, 0.012), aptTrimMat);
+    seam.position.set(x, (H - 0.24) / 2 + 0.12, BZ - 0.014);
+    add(seam);
+  }
+  /* 腰线：横向一条深木，把 3.9 m 的墙分成两段 */
+  const waist = new THREE.Mesh(new THREE.BoxGeometry(W, 0.055, 0.02), aptTrimMat);
+  waist.position.set(0, 1.12, BZ - 0.016);
+  add(waist);
+
+  /* ---- 后墙中央：四扇障子推拉门 ---- */
+  /* 障子纸是 DoubleSide，透出一点暖光，暗示门后还有空间 */
+  const DW = 2.76, DH = 2.62, DY = DH / 2 + 0.06;
+  const doorPaper = new THREE.Mesh(new THREE.PlaneGeometry(DW, DH), shojiMat);
+  doorPaper.rotation.y = Math.PI;
+  doorPaper.position.set(0, DY, BZ - 0.03);
+  add(doorPaper);
+  /* 门框：上、下、左、右 + 中间两道竖框 */
+  for (const [w, h, xx, yy] of [
+    [DW + 0.10, 0.09, 0, DY + DH / 2],
+    [DW + 0.10, 0.09, 0, DY - DH / 2],
+    [0.09, DH, -DW / 2, DY],
+    [0.09, DH, DW / 2, DY],
+  ]) {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.07), shojiFrameMat);
+    f.position.set(xx, yy, BZ - 0.055);
+    add(f);
+  }
+  for (const xx of [-DW / 6, DW / 6, 0]) {
+    const f = new THREE.Mesh(new THREE.BoxGeometry(0.05, DH, 0.05), shojiFrameMat);
+    f.position.set(xx, DY, BZ - 0.06);
+    add(f);
+  }
+  for (let i = 1; i < 5; i++) {
+    const yy = DY - DH / 2 + (DH * i) / 5;
+    const f = new THREE.Mesh(new THREE.BoxGeometry(DW, 0.035, 0.045), shojiFrameMat);
+    f.position.set(0, yy, BZ - 0.062);
+    add(f);
+  }
+  /* 门后一盏暖光：夜里让障子"透"，白天几乎收掉 */
+  const doorGlow = new THREE.PointLight(0xffd7a4, 0, 4.2, 2);
+  doorGlow.position.set(0, 1.5, BZ + 0.45);
+  add(doorGlow);
+  APT_BACK_LIGHT = doorGlow;
+
+  /* ---- 壁龛（床の間）：后墙右侧，深框 + 一幅程序化墨竹挂轴 ---- */
+  const NIC_X = 3.35;
+  /* 壁龛做成"背板 + 四边框"，不能用实心盒子：
+     实心盒会把挂轴和陶罐整个包在里面（斜后方实测只剩一个空方框）。 */
+  const nicheBack = new THREE.Mesh(new THREE.PlaneGeometry(1.42, 2.32), aptDarkMat);
+  nicheBack.rotation.y = Math.PI;
+  nicheBack.position.set(NIC_X, 1.42, BZ - 0.02);
+  add(nicheBack);
+  for (const [w, h, dx, dy] of [
+    [1.50, 0.07, 0, 2.58], [1.50, 0.07, 0, 0.26],
+    [0.07, 2.32, -0.72, 1.42], [0.07, 2.32, 0.72, 1.42],
+  ]) {
+    const edge = new THREE.Mesh(new THREE.BoxGeometry(w, h, 0.09), aptTrimMat);
+    edge.position.set(NIC_X + dx, dy, BZ - 0.06);
+    add(edge);
+  }
+
+  /* 墨竹：几笔竹竿 + 竹叶，纸本色。不复用设计师给的两张图，避免重复。 */
+  const bambooTex = (() => {
+    const c = document.createElement("canvas");
+    c.width = 256; c.height = 720;
+    const g = c.getContext("2d");
+    const bg = g.createLinearGradient(0, 0, 0, 720);
+    bg.addColorStop(0, "#e0d3b8"); bg.addColorStop(1, "#c6b697");
+    g.fillStyle = bg; g.fillRect(0, 0, 256, 720);
+    g.lineCap = "round";
+    for (const [bx, bw, alpha] of [[70, 10, 0.55], [146, 13, 0.68], [212, 7, 0.42]]) {
+      g.strokeStyle = `rgba(38,50,42,${alpha})`;
+      g.lineWidth = bw;
+      g.beginPath(); g.moveTo(bx, 720); g.quadraticCurveTo(bx + 12, 400, bx - 4, 90); g.stroke();
+      for (let yy = 180; yy < 700; yy += 96) {
+        g.lineWidth = 2; g.strokeStyle = `rgba(28,38,32,${alpha})`;
+        g.beginPath(); g.moveTo(bx - bw * 0.6, yy); g.lineTo(bx + bw * 0.6, yy - 3); g.stroke();
+        g.lineWidth = bw; g.strokeStyle = `rgba(38,50,42,${alpha})`;
+      }
+    }
+    /* 竹叶：细长椭圆，沿竿分布 */
+    g.fillStyle = "rgba(34,46,38,0.52)";
+    for (let i = 0; i < 46; i++) {
+      const px = 24 + ((i * 73) % 216), py = 110 + ((i * 157) % 560);
+      const a = (i % 2 ? 1 : -1) * (0.45 + (i % 5) * 0.12);
+      g.save(); g.translate(px, py); g.rotate(a);
+      g.beginPath(); g.ellipse(0, 0, 3.5, 17 + (i % 4) * 4, 0, 0, Math.PI * 2); g.fill();
+      g.restore();
+    }
+    /* 绫边 */
+    g.fillStyle = "#3b342a";
+    g.fillRect(0, 0, 256, 40); g.fillRect(0, 680, 256, 40);
+    g.fillRect(0, 0, 12, 720); g.fillRect(244, 0, 12, 720);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  const bambooMat = new THREE.MeshStandardMaterial({
+    map: bambooTex, roughness: 0.94, emissive: 0x2a2318, emissiveIntensity: 0.5, side: THREE.FrontSide,
+  });
+  aptGlowMats.push(bambooMat);
+  const bambooArt = new THREE.Mesh(new THREE.PlaneGeometry(0.62, 1.74), bambooMat);
+  bambooArt.rotation.y = Math.PI;
+  bambooArt.position.set(NIC_X, 1.62, BZ - 0.075);
+  add(bambooArt);
+  /* 壁龛里的陶罐 */
+  const nicheVase = new THREE.Mesh(
+    new THREE.CylinderGeometry(0.10, 0.14, 0.32, 20),
+    new THREE.MeshStandardMaterial({ color: 0x40372e, roughness: 0.7, emissive: 0x181208, emissiveIntensity: 0.5 }),
+  );
+  nicheVase.position.set(NIC_X, 0.16, BZ - 0.10);
+  add(nicheVase);
+
+  /* ---- 后墙左侧：矮边柜 + 两只陶器 ---- */
+  const BX = -3.55;
+  const backCab = new THREE.Mesh(new THREE.BoxGeometry(2.1, 0.52, 0.46), aptWoodMat);
+  backCab.position.set(BX, 0.40, BZ - 0.25);
+  backCab.castShadow = true; backCab.receiveShadow = true;
+  add(backCab);
+  for (const dx of [-0.88, 0.88]) {
+    const leg = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.14, 0.04), aptDarkMat);
+    leg.position.set(BX + dx, 0.07, BZ - 0.25);
+    add(leg);
+  }
+  for (const dx of [-0.52, 0.52]) {
+    const knob = new THREE.Mesh(new THREE.CylinderGeometry(0.009, 0.009, 0.10, 10), aptBrassMat);
+    knob.position.set(BX + dx, 0.44, BZ - 0.015);
+    add(knob);
+  }
+  for (const [dx, r] of [[-0.62, 0.10], [0.55, 0.075]]) {
+    const pot = new THREE.Mesh(new THREE.CylinderGeometry(r, r * 1.25, 0.28, 18), aptDarkMat);
+    pot.position.set(BX + dx, 0.80, BZ - 0.25);
+    add(pot);
+  }
+
+  /* ---- 右墙：竖向木格栅 + 横幅小画 + 落地立灯 ---- */
+  const RX = APT.halfW - 0.075;
+  for (let zz = -1.55; zz <= 1.55; zz += 0.235) {
+    const slat = new THREE.Mesh(new THREE.BoxGeometry(0.055, 2.55, 0.055), aptWoodMat);
+    slat.position.set(RX, 1.42, zz);
+    slat.castShadow = true;
+    add(slat);
+  }
+  for (const yy of [0.16, 2.68]) {
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 3.25), aptTrimMat);
+    rail.position.set(RX, yy, 0);
+    add(rail);
+  }
+  /* 右墙一幅横幅：程序化远山，和壁龛墨竹同一套纸色 */
+  const hillTex = (() => {
+    const c = document.createElement("canvas");
+    c.width = 512; c.height = 256;
+    const g = c.getContext("2d");
+    const bg = g.createLinearGradient(0, 0, 0, 256);
+    bg.addColorStop(0, "#d9cdb2"); bg.addColorStop(1, "#c3b393");
+    g.fillStyle = bg; g.fillRect(0, 0, 512, 256);
+    g.fillStyle = "rgba(50,60,56,0.30)";
+    g.beginPath(); g.moveTo(0, 170);
+    g.quadraticCurveTo(120, 96, 236, 162);
+    g.quadraticCurveTo(360, 108, 512, 168);
+    g.lineTo(512, 256); g.lineTo(0, 256); g.fill();
+    g.fillStyle = "rgba(34,42,40,0.44)";
+    g.beginPath(); g.moveTo(0, 204);
+    g.quadraticCurveTo(150, 152, 280, 200);
+    g.quadraticCurveTo(400, 166, 512, 206);
+    g.lineTo(512, 256); g.lineTo(0, 256); g.fill();
+    g.fillStyle = "rgba(226,210,172,0.42)";
+    g.beginPath(); g.arc(390, 62, 26, 0, Math.PI * 2); g.fill();
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
+  const hillMat = new THREE.MeshStandardMaterial({
+    map: hillTex, roughness: 0.93, emissive: 0x2a2318, emissiveIntensity: 0.5,
+  });
+  aptGlowMats.push(hillMat);
+  const hillArt = new THREE.Mesh(new THREE.PlaneGeometry(1.30, 0.65), hillMat);
+  hillArt.rotation.y = -Math.PI / 2;       // 法线朝 -x（朝房间内）
+  hillArt.position.set(RX - 0.02, 1.92, -2.85);
+  add(hillArt);
+  /* 立灯：细木杆 + 暖纸罩，夜里亮 */
+  const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 1.30, 12), aptTrimMat);
+  lampPole.position.set(RX - 0.32, 0.65, 2.55);
+  add(lampPole);
+  const lampShadeMat = new THREE.MeshStandardMaterial({
+    color: 0xe8d6b4, roughness: 0.9, emissive: 0xffce8a, emissiveIntensity: 0.55, side: THREE.DoubleSide,
+  });
+  aptGlowMats.push(lampShadeMat);
+  const lampShade = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.19, 0.34, 16, 1, true), lampShadeMat);
+  lampShade.position.set(RX - 0.32, 1.47, 2.55);
+  add(lampShade);
+  const lampLight = new THREE.PointLight(0xffc98a, 0, 3.4, 2);
+  lampLight.position.set(RX - 0.32, 1.47, 2.55);
+  add(lampLight);
+  APT_LAMP_LIGHT = lampLight;
+}
 
 /* ---------- 署名：房间里的 @karlmoriaty 标注 ---------- */
 /* 不做浮在画面上的水印，做成"房间里本来就该有的东西"：
@@ -58762,6 +59010,8 @@ function setHour(h, silent) {
   /* 和风新构件：障子背光 + 縁側台沿灯 + 红色竖霓虹。
      灯全亮之后它们才起，白天彻底收掉——否则白天会看到"没通电的霓虹"。 */
   if (APT_SHOJI_LIGHT) APT_SHOJI_LIGHT.intensity = lampK * 4.4;
+  if (APT_BACK_LIGHT) APT_BACK_LIGHT.intensity = lampK * 2.6;
+  if (APT_LAMP_LIGHT) APT_LAMP_LIGHT.intensity = lampK * 1.8;
   shojiMat.emissiveIntensity = lerp(0.16, 0.62, lampK);
   aptNoseGlow.material.opacity = lampK * 0.42;
   neonMat.opacity = lampK * 0.95;
@@ -59078,7 +59328,7 @@ canvasEl.addEventListener('pointermove', (e) => {
        编辑器里点面 / 拖家具依赖指针与画面严格对齐，60 ms 的滞后就会点偏。
        灵敏度从 0.006/0.005 降到 0.0026/0.0022：实测 120 px 拖动会让画面
        位移 634 px（放大 5 倍），太"窜"；降到约 2 倍才接近手上的力度。 */
-    orbit.theta = orbitGoal.theta = clamp(dragInfo.theta - dx * 0.0026, ...THETA_RANGE);
+    orbit.theta = orbitGoal.theta = wrapAngle(dragInfo.theta - dx * 0.0026);
     orbit.phi = orbitGoal.phi = clamp(dragInfo.phi - dy * 0.0022, ...PHI_RANGE);
     placeCamera();
     markDirty();
@@ -59810,6 +60060,39 @@ if (location.search.includes('selftest')) {
     return ok ? `ok(太阳在窗外z<${INTERIOR.winZ},shadow far=${sc.far},墙投影=${wallsCast})`
       : `FAIL(cam=${camOK},outside=${allOutside},walls=${wallsCast})`;
   });
+  /* 全周环视：36 个方位角逐一摆相机，断言始终在房间内、且没有 NaN。
+     旧版 theta 锁在 [0.02,1.42]，转到后方会穿出窗墙；固定半径会在左侧
+     贴到挂轴背面整屏黑。这条断言把"任何角度都能看"钉死。 */
+  step('fullOrbit', () => {
+    const savedT = orbit.theta, savedP = orbit.phi;
+    let inside = 0, finite = 0;
+    for (let i = 0; i < 36; i++) {
+      orbit.theta = (i / 36) * Math.PI * 2;
+      orbit.phi = 1.34;
+      placeCamera();
+      const p = camera.position;
+      if (Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)) finite++;
+      if (Math.abs(p.x) <= ROOM_BOUNDS.halfW
+          && p.z >= ROOM_BOUNDS.backZ && p.z <= ROOM_BOUNDS.frontZ) inside++;
+    }
+    orbit.theta = savedT; orbit.phi = savedP;
+    placeCamera();
+    /* 连续 36 次改 position/lookAt 后，matrixWorld 仍停在上一帧渲染的状态，
+       后面 signPlates 用 project(camera) 会算到旧位置去。这里强制刷新。 */
+    camera.updateMatrixWorld(true);
+    /* 后墙必须真的存在：单面朝内、覆盖整幅宽度、位置在 frontZ */
+    const back = scene.children.filter((o) => o.isMesh
+      && o.geometry && o.geometry.type === 'PlaneGeometry'
+      && Math.abs(o.position.z - APT.frontZ) < 0.01
+      && o.geometry.parameters.width >= APT.halfW * 2 - 0.01);
+    const backOK = back.length === 1 && back[0].material.side === THREE.FrontSide;
+    /* 拖拽角度必须能跨过旧的 1.42 上限 */
+    const wrapOK = wrapAngle(0.62 + Math.PI * 2) > 0.61
+      && wrapAngle(0.62 + Math.PI * 2) < 0.63;
+    const ok = inside === 36 && finite === 36 && backOK && wrapOK;
+    return ok ? `ok(36/36方位在房内,后墙在场,角度可整圈)`
+      : `FAIL(inside=${inside},finite=${finite},back=${backOK},wrap=${wrapOK})`;
+  });
   /* 挂画：月夜图必须内联（单文件可双击打开），画框比例要和图片一致。
      图片异步加载，若 src 写错会留一块空画布，所以也查贴图已经有内容。 */
   step('wallArts', () => {
@@ -60009,7 +60292,7 @@ if (location.search.includes('selftest')) {
   step('dragIsImmediate', () => {
     resetCam();
     const th0 = orbit.theta;
-    orbit.theta = orbitGoal.theta = clamp(th0 - 120 * 0.0026, ...THETA_RANGE);
+    orbit.theta = orbitGoal.theta = wrapAngle(th0 - 120 * 0.0026);
     placeCamera();
     const lag = Math.abs(orbit.theta - orbitGoal.theta);
     const delta = Math.abs(orbit.theta - th0);
@@ -60101,6 +60384,8 @@ if (location.search.includes('probe')) {
   window.__LINK_SPOTS = LINK_SPOTS;
   window.__lights = { sun, hemi, bounce, windowFill, rimCool, duskSpill, renderer, scene };
   window.__viewTex = viewTex;
+  window.__orbit = orbit;
+  window.__placeCamera = placeCamera;
   window.__probe = (cx, cy) => {
     const ndc = new THREE.Vector2(
       (cx / window.innerWidth) * 2 - 1,
