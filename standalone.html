@@ -55858,14 +55858,17 @@ scene.add(hemi);
 
 const sun = new THREE.DirectionalLight(0xffe6c4, 2.4);
 sun.castShadow = true;
-sun.shadow.mapSize.set(2048, 2048);
-/* 阴影正交范围要盖住整间房：11.2 m 宽、10 m 深，±6 会在边角漏光 */
-sun.shadow.camera.left = -9;
-sun.shadow.camera.right = 9;
-sun.shadow.camera.top = 9;
-sun.shadow.camera.bottom = -9;
+/* 4096 才有足够精度投出窗棂的格子影：22 m 的范围里 2048 只有 93 texel/m，
+   窗框的细边会糊成一团。 */
+sun.shadow.mapSize.set(4096, 4096);
+/* 正交范围要盖住整间房（11.2 m 宽 × 10 m 深）以及窗棂的投影，±11 够用。 */
+sun.shadow.camera.left = -11;
+sun.shadow.camera.right = 11;
+sun.shadow.camera.top = 11;
+sun.shadow.camera.bottom = -11;
 sun.shadow.camera.near = 0.5;
-sun.shadow.camera.far = 20;
+/* 太阳现在在窗外、距目标约 21 m，far=20 会把整间房裁掉（阴影直接消失）。 */
+sun.shadow.camera.far = 60;
 sun.shadow.bias = -0.0006;
 sun.shadow.normalBias = 0.022;
 sun.shadow.camera.updateProjectionMatrix();
@@ -56803,12 +56806,17 @@ const aptDepth = APT.frontZ - APT.backZ;
    实心盒子从房间外侧绕过去会挡住视线，单面墙在外侧被背面剔除，永远能看进去。 */
 const aptWallSideMat = aptWallMat.clone();
 aptWallSideMat.side = THREE.FrontSide;
+/* 单面板投影必须用双面 shadowSide，不然从背面看过去不产生深度 */
+aptWallSideMat.shadowSide = THREE.DoubleSide;
 aptGlowMats.push(aptWallSideMat);
 for (const sx of [-1, 1]) {
   const wall = new THREE.Mesh(new THREE.PlaneGeometry(aptDepth, aptSideH), aptWallSideMat);
   wall.position.set(sx * APT.halfW, aptSideH / 2, (APT.frontZ + APT.backZ) / 2);
   wall.rotation.y = -sx * Math.PI / 2;      // 法线朝房间内侧
   wall.receiveShadow = true;
+  /* 单面墙默认 shadowSide 是背面，投影会漏；同时把 castShadow 打开，
+     否则太阳会从侧墙"穿"进屋里（旧版就是这样，室内亮度全靠补光撑着）。 */
+  wall.castShadow = true;
   scene.add(wall);
   /* 踢脚：高 0.09 的一道深色细边，墙才落在地上 */
   const skirt = new THREE.Mesh(new THREE.BoxGeometry(0.015, 0.09, aptDepth), aptTrimMat);
@@ -56819,6 +56827,7 @@ for (const sx of [-1, 1]) {
 /* 天花：朝下的单面材质——相机在室内时它是天花，升到顶上时被背面剔除，
    露出剖切面。深色平顶，是深色现代空间的一半底色。 */
 const aptCeilMat = new THREE.MeshStandardMaterial({
+  shadowSide: THREE.DoubleSide,
   color: 0x24252a, roughness: 0.97, metalness: 0,
   /* 朝下的单面收不到太阳直射，白天完全靠自发光显形；
      底色太暗（0x121317）的话，intensity 再高也是一整片纯黑。 */
@@ -56827,6 +56836,8 @@ const aptCeilMat = new THREE.MeshStandardMaterial({
 const aptCeil = new THREE.Mesh(new THREE.PlaneGeometry(APT.halfW * 2, aptDepth), aptCeilMat);
 aptCeil.rotation.x = Math.PI / 2;          // 法线朝下
 aptCeil.position.set(0, APT.ceilY, (APT.frontZ + APT.backZ) / 2);
+/* 天花也要挡光：不挡的话高角度的太阳会从屋顶漏进来 */
+aptCeil.castShadow = true;
 scene.add(aptCeil);
 /* 不进 aptGlowMats：天花的明度在 setHour() 里单独给一条曲线 */
 
@@ -58610,15 +58621,18 @@ function setHour(h, silent) {
   const dayT = clamp((hour - 6.2) / 13.4, 0, 1);   // 6:12 日出 → 19:36 日落
   const arc = Math.sin(dayT * Math.PI);            // 太阳高度因子
 
-  const elev = 3 + arc * 64;
-  const azim = lerp(-0.95, 0.95, dayT);
+  const elev = 5 + arc * 29;
+  const azim = lerp(-1.05, 0.45, dayT);
   const R = 16;
   const rad = (elev * Math.PI) / 180;
   const horiz = Math.cos(rad) * R;
+  /* 太阳必须在窗外（z < 窗面 -4.9）。旧版写的是 +cos(azim)·horiz·0.85，
+     结果太阳一直在相机背后（实测 12:24 落在 z=+6.9），
+     光根本进不了窗，室内几乎全靠补光——只开太阳时整间屋子是黑的。 */
   sun.position.set(
     -Math.sin(azim) * horiz,
     Math.sin(rad) * R + 1.4,
-    Math.cos(azim) * horiz * 0.85 + 1.5,
+    -Math.abs(Math.cos(azim)) * horiz * 0.85 - 1.5,
   );
   sun.target.position.set(0, 0.8, 0);
 
@@ -58627,7 +58641,7 @@ function setHour(h, silent) {
     : hour < 18 ? 1
     : 1 - smooth(clamp((hour - 18) / 2.2, 0, 1));
 
-  const warmK = clamp(1 - elev / 58, 0, 1) * clamp(dayF + 0.15, 0, 1);
+  const warmK = clamp(1 - elev / 58, 0, 1) * clamp(dayF + 0.15, 0, 1) * 0.72;
 
   /* 时段先定下来，光照和贴图都要按它分档。
      night / dusk / day 三档：之前只有"白天/夜里"两档，黄昏落进白天，
@@ -58641,25 +58655,25 @@ function setHour(h, silent) {
   const c = new THREE.Color().copy(cDay).lerp(cGold, warmK);
   if (dayF < 0.06) c.lerp(cMoon, 1 - dayF / 0.06);
   sun.color.copy(c);
-  sun.intensity = dayF < 0.06 ? 0.10 : lerp(0.18, 1.55, dayF);
+  sun.intensity = dayF < 0.06 ? 0.10 : lerp(0.18, 3.10, dayF);
 
   /* 天光与环境：白天要"涌进屋里"而不是只照亮窗外。
      旧值白天 hemi 0.28 / environment 0.30 / windowFill 0.32（比夜里还低），
      深色木墙吸光，屋里于是发闷。三个值按 dayF 抬上去。 */
-  hemi.intensity = lerp(0.09, 0.46, dayF);
+  hemi.intensity = lerp(0.09, 0.36, dayF);
   hemi.color.set(dayF > 0.3 ? 0xdfe9ff : 0x8294bb);
   hemi.groundColor.set(dayF > 0.3 ? 0x6d5844 : 0x302a23);
 
-  bounce.intensity = lerp(0.03, 0.42, dayF);
+  bounce.intensity = lerp(0.03, 0.34, dayF);
 
   /* 场景级的那几盏原本是常量，无论几点都把屋子均匀洗白——夜里没有暗部，
      就谈不上氛围。现在全部跟着天光收放：白天由太阳主导，天黑后交给屋里的灯。 */
-  scene.environmentIntensity = lerp(0.055, 0.58, dayF);
+  scene.environmentIntensity = lerp(0.055, 0.44, dayF);
   /* windowFill 是"从窗进来的天光"。旧值白天 0.32 比夜里 0.42 还低，
      等于白天窗口反而更暗，屋里自然闷。现在白天抬到 1.05。 */
-  windowFill.intensity = lerp(0.42, 1.05, dayF);
-  rimCool.intensity = lerp(0.18, 0.72, dayF);
-  rimWarm.intensity = lerp(0.12, 0.42, dayF);
+  windowFill.intensity = lerp(0.42, 0.88, dayF);
+  rimCool.intensity = lerp(0.18, 0.56, dayF);
+  rimWarm.intensity = lerp(0.12, 0.34, dayF);
   spill.material.opacity = lerp(0.22, 0.16, dayF);
 
   /* 黄昏暖光：只在暖光时段起。dayF 已从 1 落到 0.8 左右，太阳低、光色转金，
@@ -59790,6 +59804,28 @@ if (location.search.includes('selftest')) {
     return ok ? `ok(3档 ${n.image.width}x${n.image.height},uv=${n.repeat.x.toFixed(2)}/${n.repeat.y.toFixed(2)},inline)`
       : 'FAIL';
   });
+  /* 阴影方向：太阳必须在窗外（z < winZ），光才可能照进屋。
+     之前算 azim 时用了 +cos，正午太阳落在 z=+6.9（相机背后），
+     室内只剩补光、桌下没有影子，肉眼看只是"有点平"，很难定位。
+     用断言把几何关系钉死，再去测三个时刻。 */
+  step('sunThroughWindow', () => {
+    const sc = sun.shadow.camera;
+    const camOK = sc.far >= 40 && sc.right >= 10 && sun.shadow.mapSize.x >= 2048;
+    const wallsCast = scene.children.filter((o) => o.isMesh
+      && o.geometry && o.geometry.type === 'PlaneGeometry'
+      && Math.abs(Math.abs(o.position.x) - APT.halfW) < 0.01).every((o) => o.castShadow);
+    const samples = [8, 12.4, 17, 22];
+    let allOutside = true;
+    for (const h of samples) {
+      setHour(h);
+      /* 方向灯的位置决定光从哪来：z 必须小于窗面 */
+      if (sun.position.z >= INTERIOR.winZ) allOutside = false;
+    }
+    setHour(20.7);
+    const ok = camOK && allOutside && wallsCast && INTERIOR.winZ < 0;
+    return ok ? `ok(太阳在窗外z<${INTERIOR.winZ},shadow far=${sc.far},墙投影=${wallsCast})`
+      : `FAIL(cam=${camOK},outside=${allOutside},walls=${wallsCast})`;
+  });
   /* 署名铭牌：两块都在场、坐标在场景内、链接正确、能被射线拾取到。
      拾取必须在屏幕上的实际位置试，不能拿世界坐标冒充。 */
   step('signPlates', () => {
@@ -60047,6 +60083,7 @@ if (location.search.includes('probe')) {
   window.__cityOverlay = cityOverlay;
   window.__state = state;
   window.__LINK_SPOTS = LINK_SPOTS;
+  window.__lights = { sun, hemi, bounce, windowFill, rimCool, duskSpill, renderer, scene };
   window.__viewTex = viewTex;
   window.__probe = (cx, cy) => {
     const ndc = new THREE.Vector2(
