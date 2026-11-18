@@ -57568,26 +57568,26 @@ scene.add(aptArt);
   const RX = APT.halfW - 0.075;
   /* 木格栅原来是居中的 3.1 m，正好占了门和画的位置。
      v6.6 把它移到右墙远端（z 3.15..5.05），让出中间做"画—门—画"的对称布局。 */
-  for (let zz = 3.15; zz <= 5.05; zz += 0.235) {
+  for (let zz = 3.20; zz <= 4.95; zz += 0.235) {
     const slat = new THREE.Mesh(new THREE.BoxGeometry(0.055, 2.55, 0.055), aptWoodMat);
     slat.position.set(RX, 1.42, zz);
     slat.castShadow = true;
     add(slat);
   }
   for (const yy of [0.16, 2.68]) {
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 2.1), aptTrimMat);
-    rail.position.set(RX, yy, 4.1);
+    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.06, 1.85), aptTrimMat);
+    rail.position.set(RX, yy, 4.08);
     add(rail);
   }
 
-  /* ---- 右墙的障子推拉门（v6.6 新增）----
-     与左墙那道推拉门同一套做法：两扇半透纸 + 深木框 + 中骨 + 引手 + 门套，
-     高度与左墙那道同为 2.90 m，宽度收到 1.78（内门尺度），并镜像到 +x 墙。
-     门心 z=-0.75，成为"渔舟 / 门 / 湖景"三者的对称轴。 */
-  const rDoorZ = -0.75, rDoorH = 2.90, rLeaf = 0.85;
+  /* ---- 右墙的障子推拉门 ----
+     v6.7：宽度 1.78 → 2.40（两扇各 1.20），两幅画的间隔随之拉开到 0.35 m。
+     整面墙 10 m 均分：渔舟 1.95 + 0.35 + 门 2.40 + 0.35 + 湖景 1.95，
+     两端各留 0.525。门心 z=-0.875 仍是对称轴。 */
+  const rDoorZ = -0.875, rDoorH = 2.90, rLeaf = 1.20;
   /* 两扇白纸门：只在最外侧加一圈门套 + 中间一道缝。
      之前每扇都套四条框，结果被切成四根白条，读起来像百叶窗。 */
-  for (const dz of [-0.43, 0.43]) {
+  for (const dz of [-0.60, 0.60]) {
     const panel = new THREE.Mesh(new THREE.BoxGeometry(0.035, rDoorH, rLeaf), shojiMat);
     panel.position.set(APT.halfW - 0.03, rDoorH / 2, rDoorZ + dz);
     add(panel);
@@ -57603,10 +57603,10 @@ scene.add(aptArt);
     add(vb);
   }
   for (const [w, h, d, dy, dz] of [
-    [0.05, rDoorH + 0.10, 0.05, (rDoorH + 0.10) / 2, -0.885],
-    [0.05, rDoorH + 0.10, 0.05, (rDoorH + 0.10) / 2, 0.885],
-    [0.05, 0.08, 1.82, rDoorH + 0.04, 0],
-    [0.05, 0.06, 1.82, 0.03, 0],
+    [0.05, rDoorH + 0.10, 0.05, (rDoorH + 0.10) / 2, -1.235],
+    [0.05, rDoorH + 0.10, 0.05, (rDoorH + 0.10) / 2, 1.235],
+    [0.05, 0.08, 2.52, rDoorH + 0.04, 0],
+    [0.05, 0.06, 2.52, 0.03, 0],
   ]) {
     const jamb = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), aptTrimMat);
     jamb.position.set(APT.halfW - 0.025, dy, rDoorZ + dz);
@@ -57635,7 +57635,7 @@ scene.add(aptArt);
   aptGlowMats.push(rightArtMat);
   const rightArt = new THREE.Mesh(new THREE.PlaneGeometry(1.95, 1.10), rightArtMat);
   rightArt.rotation.y = -Math.PI / 2;
-  rightArt.position.set(RX - 0.02, 1.92, -2.85);
+  rightArt.position.set(RX - 0.02, 1.92, -3.40);
   add(rightArt);
   /* 右墙第二幅画：以门（z=-0.75）为轴与渔舟对称。
      渔舟中心 -2.85 → 相距 2.10 → 新画中心 1.35。
@@ -57647,22 +57647,22 @@ scene.add(aptArt);
   aptGlowMats.push(right2Mat);
   const right2Art = new THREE.Mesh(new THREE.PlaneGeometry(1.95, 1.10), right2Mat);
   right2Art.rotation.y = -Math.PI / 2;
-  right2Art.position.set(RX - 0.02, 1.92, 1.35);
+  right2Art.position.set(RX - 0.02, 1.92, 1.65);
   add(right2Art);
 
   /* 立灯：细木杆 + 暖纸罩，夜里亮 */
   const lampPole = new THREE.Mesh(new THREE.CylinderGeometry(0.018, 0.022, 1.30, 12), aptTrimMat);
-  lampPole.position.set(RX - 0.32, 0.65, 2.75);
+  lampPole.position.set(RX - 0.32, 0.65, 2.88);
   add(lampPole);
   const lampShadeMat = new THREE.MeshStandardMaterial({
     color: 0xe8d6b4, roughness: 0.9, emissive: 0xffce8a, emissiveIntensity: 0.55, side: THREE.DoubleSide,
   });
   aptGlowMats.push(lampShadeMat);
   const lampShade = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.19, 0.34, 16, 1, true), lampShadeMat);
-  lampShade.position.set(RX - 0.32, 1.47, 2.75);
+  lampShade.position.set(RX - 0.32, 1.47, 2.88);
   add(lampShade);
   const lampLight = new THREE.PointLight(0xffc98a, 0, 3.4, 2);
-  lampLight.position.set(RX - 0.32, 1.47, 2.75);
+  lampLight.position.set(RX - 0.32, 1.47, 2.88);
   add(lampLight);
   APT_LAMP_LIGHT = lampLight;
 }
@@ -60611,8 +60611,8 @@ if (location.search.includes('selftest')) {
     const want = [
       ["model",  0.65, 1.42, 484,  484 / 1036],
       ["left",   0.91, 1.95, 487,  487 / 1045],
-      ["right",  1.95, 1.10, 1647, 1647 / 928, -2.85],
-      ["right2", 1.95, 1.10, 1078, 1078 / 608, 1.35],
+      ["right",  1.95, 1.10, 1647, 1647 / 928, -3.40],
+      ["right2", 1.95, 1.10, 1078, 1078 / 608, 1.65],
       ["back",   0.77, 1.74, 462,  462 / 1048],
       ["back3",  2.00, 1.21, 1102, 1102 / 667],
     ];
