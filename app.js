@@ -2220,56 +2220,91 @@ scene.add(aptArt);
     add(rail);
   }
 
-  /* ---- 右墙的障子推拉门 ----
-     v6.7：宽度 1.78 → 2.40（两扇各 1.20），两幅画的间隔随之拉开到 0.35 m。
-     整面墙 10 m 均分：渔舟 1.95 + 0.35 + 门 2.40 + 0.35 + 湖景 1.95，
-     两端各留 0.525。门心 z=-0.875 仍是对称轴。 */
-  const rDoorZ = -0.875, rDoorH = 2.90, rLeaf = 1.20;
-  /* 两扇白纸门：只在最外侧加一圈门套 + 中间一道缝。
-     之前每扇都套四条框，结果被切成四根白条，读起来像百叶窗。 */
-  for (const dz of [-0.60, 0.60]) {
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.035, rDoorH, rLeaf), shojiMat);
-    panel.position.set(APT.halfW - 0.03, rDoorH / 2, rDoorZ + dz);
-    add(panel);
-    /* 障子的骨架：3 道横骨 + 1 道竖中骨。
-       只有外框和白纸时，窄门扇会读成"几根白条"；补上格子才是障子门。 */
-    for (const ry of [0.74, 1.47, 2.20]) {
-      const hb = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.035, rLeaf - 0.02), shojiFrameMat);
-      hb.position.set(APT.halfW - 0.048, ry, rDoorZ + dz);
-      add(hb);
-    }
-    const vb = new THREE.Mesh(new THREE.BoxGeometry(0.04, rDoorH - 0.06, 0.028), shojiFrameMat);
-    vb.position.set(APT.halfW - 0.048, rDoorH / 2, rDoorZ + dz);
-    add(vb);
-  }
-  for (const [w, h, d, dy, dz] of [
-    [0.05, rDoorH + 0.10, 0.05, (rDoorH + 0.10) / 2, -1.235],
-    [0.05, rDoorH + 0.10, 0.05, (rDoorH + 0.10) / 2, 1.235],
-    [0.05, 0.08, 2.52, rDoorH + 0.04, 0],
-    [0.05, 0.06, 2.52, 0.03, 0],
-  ]) {
-    const jamb = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), aptTrimMat);
-    jamb.position.set(APT.halfW - 0.025, dy, rDoorZ + dz);
+  /* ---- 右墙的障子推拉门（v6.8 重做）----
+     前一版的问题不是尺寸，是"不像门"：
+     ① 纸用 shojiMat（#e9e1d1 + 自发光 0.35），在深胡桃墙上像一块发光的板子，
+        整面墙最亮的就是它 —— 抢眼；
+     ② 每扇只有 3 横 1 竖、骨宽 0.035，格子太大，读起来像围栏；
+     ③ 门扇平贴墙面，没有门套进深、没有上轨下槛，看起来是一张贴纸。
+     重做四件事：把纸压暗到暖灰、格子加密变细、门扇缩进门套形成阴影、
+     补上鸭居（上轨）与敷居（下槛），再加凹槽式引手。
+     尺寸沿用 v6.7 的 2.40×2.90（门心 -0.875）。 */
+  const rDoorZ = -0.875, rDoorH = 2.90, rLeaf = 1.18;
+  /* 门纸：比障子墙暗一档。同一张纹理，靠 color 相乘压暗，不新造图。
+     自发光固定 0.10，夜里不会变成一块白灯箱。 */
+  const doorPaperMat = new THREE.MeshStandardMaterial({
+    color: 0xcabfa8, roughness: 0.96, metalness: 0,
+    emissive: 0x3b3327, emissiveIntensity: 0.10, side: THREE.DoubleSide,
+  });
+  const doorFrameMat = new THREE.MeshStandardMaterial({
+    map: tableTex, color: 0x5c4a38, roughness: 0.72, metalness: 0.04,
+    emissive: 0x140f0a, emissiveIntensity: 0.4,
+  });
+  aptGlowMats.push(doorFrameMat);
+
+  /* 门套：左右立梃 + 上鸭居 + 下敷居。
+     立梃比门扇凸出 0.06，门扇缩在里侧 —— 这道进深就是"洞"的感觉。 */
+  for (const dz of [-1.235, 1.235]) {
+    const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.10, rDoorH + 0.12, 0.07), doorFrameMat);
+    jamb.position.set(APT.halfW - 0.05, (rDoorH + 0.12) / 2, rDoorZ + dz);
     add(jamb);
   }
-  /* 中缝：两扇之间的那道细影，比塞一根框干净 */
-  const doorSeam = new THREE.Mesh(new THREE.BoxGeometry(0.045, rDoorH, 0.018), aptTrimMat);
-  doorSeam.position.set(APT.halfW - 0.052, rDoorH / 2, rDoorZ);
-  add(doorSeam);
-  /* 引手：两扇各一个小横木 */
-  for (const dz of [-0.10, 0.10]) {
-    const hikite = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 0.11), aptBrassMat);
-    hikite.position.set(APT.halfW - 0.062, 1.02, rDoorZ + dz);
-    add(hikite);
+  /* 鸭居（上轨）：一道带凹槽的横梁 */
+  const kamoi = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.10, 2.56), doorFrameMat);
+  kamoi.position.set(APT.halfW - 0.05, rDoorH + 0.05, rDoorZ);
+  add(kamoi);
+  const kamoiGroove = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 2.56), aptTrimMat);
+  kamoiGroove.position.set(APT.halfW - 0.095, rDoorH + 0.005, rDoorZ);
+  add(kamoiGroove);
+  /* 敷居（下槛）：贴地薄轨，两扇各一条 */
+  for (const dz of [-0.60, 0.60]) {
+    const shikii = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.022, 1.22), aptTrimMat);
+    shikii.position.set(APT.halfW - 0.055, 0.011, rDoorZ + dz);
+    add(shikii);
   }
 
-  for (const dz of [-0.06, 0.06]) {
-    const hikite = new THREE.Mesh(new THREE.BoxGeometry(0.02, 0.03, 0.11), aptBrassMat);
-    hikite.position.set(APT.halfW - 0.055, 1.02, rDoorZ + dz);
-    add(hikite);
+  /* 两扇门：错开 0.04 的轨道，中缝处前扇压后扇，是推拉门该有的样子 */
+  for (const dz of [-0.60, 0.60]) {
+    const px = dz < 0 ? APT.halfW - 0.085 : APT.halfW - 0.045;
+    const paper = new THREE.Mesh(new THREE.BoxGeometry(0.028, rDoorH - 0.08, rLeaf - 0.05), doorPaperMat);
+    paper.position.set(px, rDoorH / 2, rDoorZ + dz);
+    add(paper);
+    /* 每扇的门框：上下 + 左右。框宽 0.055，比纸厚，读得出骨架 */
+    for (const [w, h, d, dy, dzz] of [
+      [0.06, 0.055, rLeaf, rDoorH - 0.03, 0],
+      [0.06, 0.055, rLeaf, 0.03, 0],
+      [0.06, rDoorH - 0.08, 0.055, rDoorH / 2, -(rLeaf / 2 - 0.028)],
+      [0.06, rDoorH - 0.08, 0.055, rDoorH / 2, rLeaf / 2 - 0.028],
+    ]) {
+      const fr = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), doorFrameMat);
+      fr.position.set(px - 0.006, dy, rDoorZ + dz + dzz);
+      add(fr);
+    }
+    /* 细密格子：5 道横骨 + 2 道竖骨（3 列 × 6 行）。骨宽 0.022，不再是围栏。 */
+    for (let i = 1; i <= 5; i++) {
+      const hy = 0.06 + ((rDoorH - 0.16) * i) / 6;
+      const hb = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.022, rLeaf - 0.10), doorFrameMat);
+      hb.position.set(px - 0.005, hy, rDoorZ + dz);
+      add(hb);
+    }
+    for (const k of [-1, 1]) {
+      const vb = new THREE.Mesh(new THREE.BoxGeometry(0.028, rDoorH - 0.16, 0.02), doorFrameMat);
+      vb.position.set(px - 0.005, rDoorH / 2, rDoorZ + dz + (k * (rLeaf - 0.10)) / 3);
+      add(vb);
+    }
+    /* 引手：日式的做法是一个浅浅的指孔槽 + 一条细铜条，
+       不是凸出来的把手。槽比纸面凹 0.012，铜条嵌在槽底。 */
+    const gz = dz < 0 ? 0.44 : -0.44;
+    const groove = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, 0.07), aptTrimMat);
+    groove.position.set(px - 0.016, 1.06, rDoorZ + dz + gz);
+    add(groove);
+    const brass = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.012, 0.062), aptBrassMat);
+    brass.position.set(px - 0.021, 1.06, rDoorZ + dz + gz);
+    add(brass);
   }
-  /* 右墙横幅：1647×928（比例 1.775），画心按同比例 1.95×1.10。
-     法线朝 -x（朝房间内），转到右侧视角才看得见。 */
+
+  /* 右墙横幅（渔舟）：1647×928（比例 1.775），画心 1.95×1.10。
+     v6.8 重做门时误删，这里补回，位置与湖景关于门心对称（z=-3.40）。 */
   const rightArtTex = makeWallArt(ART_RIGHT_URL, 1647, 928);
   const rightArtMat = wallArtMaterial(rightArtTex);
   aptGlowMats.push(rightArtMat);
@@ -2277,6 +2312,7 @@ scene.add(aptArt);
   rightArt.rotation.y = -Math.PI / 2;
   rightArt.position.set(RX - 0.02, 1.92, -3.40);
   add(rightArt);
+
   /* 右墙第二幅画：以门（z=-0.75）为轴与渔舟对称。
      渔舟中心 -2.85 → 相距 2.10 → 新画中心 1.35。
      设计师要求"大小跟左边那幅画一致"，所以画心做成与渔舟完全相同的 1.95×1.10；
