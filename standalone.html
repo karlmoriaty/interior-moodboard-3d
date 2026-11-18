@@ -59292,6 +59292,38 @@ function makeCandleStand() {
   return g;
 }
 
+/* ---------- v7.2：玻璃顶（吊灯的依附面） ----------
+   模型台原本是敞开的，吊灯悬在空中没有支撑 —— 这是个逻辑漏洞。
+   加一块玻璃顶：细黑框 + 极淡玻璃 + 两道横梁，贴房间顶部（y=2.96）。
+   玻璃用 opacity 0.10 + depthWrite false，俯视时几乎不挡视线。 */
+function makeGlassRoof() {
+  const g = pieceGroup('glassRoof', 7.8, 5.8, 3.0);
+  const RW = 7.8, RD = 5.8, RY = 2.96;
+  const frame = new THREE.MeshStandardMaterial({ color: 0x121417, roughness: 0.45, metalness: 0.4 });
+  const pane = new THREE.MeshStandardMaterial({
+    color: 0xcfe0ee, roughness: 0.55, metalness: 0,
+    transparent: true, opacity: 0.05, side: THREE.DoubleSide, depthWrite: false,
+  });
+  /* 玻璃面 */
+  const glass = new THREE.Mesh(new THREE.PlaneGeometry(RW - 0.12, RD - 0.12), pane);
+  glass.rotation.x = Math.PI / 2;
+  glass.position.y = RY;
+  glass.renderOrder = 1;
+  g.add(glass);
+  /* 外框四边 */
+  for (const [w, d, px, pz] of [
+    [RW, 0.05, 0, -RD / 2], [RW, 0.05, 0, RD / 2],
+    [0.05, RD, -RW / 2, 0], [0.05, RD, RW / 2, 0],
+  ]) {
+    addBox(g, w, 0.045, d, px, RY, pz, frame);
+  }
+  /* 两道横梁：玻璃顶的骨架，也给吊灯一个"看得出能挂"的位置 */
+  for (const bz of [-1.35, 1.35]) {
+    addBox(g, RW - 0.1, 0.035, 0.05, 0, RY - 0.005, bz, frame);
+  }
+  return g;
+}
+
 const BUILD = {
   sofa: makeSofa, armchair: makeArmchair, coffeeTable: makeCoffeeTable, sideTable: makeSideTable,
   diningTable: makeDiningTable, chair: makeChair, shelf: makeShelf, lamp: makeLamp, plant: makePlant,
@@ -59311,6 +59343,7 @@ const BUILD = {
   /* v7.0：参考图家具 */
   cornerSofa: makeCornerSofa, fireplace: makeFireplace, tree: makeTree, piano: makePiano,
   candleCluster: makeCandleCluster, candleStand: makeCandleStand,
+  glassRoof: makeGlassRoof,
 };
 
 function placePiece(type, x, z, rot) {
@@ -59318,7 +59351,8 @@ function placePiece(type, x, z, rot) {
   const g = BUILD[type]();
   g.position.set(x, 0, z);
   g.rotation.y = rot || 0;
-  if (type !== 'pendant') {
+  /* 玻璃顶在天花高度、吊灯是吊装件，两者都不该在地面留接触阴影 */
+  if (type !== 'pendant' && type !== 'glassRoof') {
     const p = g.userData.piece;
     const blob = new THREE.Mesh(
       new THREE.PlaneGeometry(p.w * 1.32, p.d * 1.32),
@@ -59366,13 +59400,29 @@ function clampPos(g, x, z) {
     clamp(Math.round(z * 10) / 10, Z0 + hz, Z1 - hz),
   ];
 }
+let lastPlaceError = null;
+/* 吊灯必须有依附面：没有玻璃顶就不让放。
+   模型台原本敞开，吊灯悬空是这次修的逻辑漏洞。 */
+function hasGlassRoof() {
+  return PIECES.children.some((g) => g.userData.piece && g.userData.piece.type === 'glassRoof');
+}
+const PLACE_BLOCKED = { pendantNoRoof: '吊灯需要玻璃顶：先在结构里放一块玻璃顶' };
+
 function placeAt(type, x, z, rot) {
+  if (type === 'pendant' && !hasGlassRoof()) {
+    lastPlaceError = PLACE_BLOCKED.pendantNoRoof;
+    return null;
+  }
+  lastPlaceError = null;
   const g = placePiece(type, 0, 0, rot || 0);
   if (!g) return null;
   const [cx, cz] = clampPos(g, x, z);
   g.position.set(cx, 0, cz);
+  /* 玻璃顶没有依附对象（它是天花板），吊灯依赖它 —— 反向不需要级联：
+     撤销/重做会整表重建，顺序天然正确。 */
   return g;
 }
+
 
 /* 家具位置变化后同步到状态并重绘 */
 function syncPieces() {
@@ -59407,6 +59457,8 @@ room.add(rug);
    钢琴退到右后当背景，壁炉靠右墙正对沙发，圣诞树右前角，
    蜡烛沿"沙发—茶几—壁炉"这条线铺开。 */
 const initialPieces = [
+  /* 玻璃顶必须排在吊灯之前 —— 吊灯依赖它 */
+  ['glassRoof', 0, 0, 0],
   ['cornerSofa', -2.95, -0.60, Math.PI / 2],
   ['coffeeTable', 0.35, -0.55, 0],
   ['pendant', 0.35, -0.55, 0],
@@ -59896,6 +59948,7 @@ const STRUCTURE = [
   { id: 'opening', name: '门洞', sub: '1.30 m' },
   { id: 'platform', name: '地台', sub: '1.80×1.10' },
   { id: 'railing', name: '栏杆', sub: '1.60 m' },
+  { id: 'glassRoof', name: '玻璃顶', sub: '7.8×5.8' },
 ];
 
 /* 装饰物件：画、书、花器、镜、雕塑、烛台、小地毯 */
@@ -60252,7 +60305,14 @@ function onCardUp(e) {
     if (!p) return;
     pushHistory();
     const g = placeAt(cardDrag.id, p.x, p.z, 0);
-    if (!g) return;
+    if (!g) {
+      /* 依赖检查没过：把原因说出来，不要静默失败 */
+      if (lastPlaceError) {
+        history.pop();
+        toast(lastPlaceError);
+      }
+      return;
+    }
     syncPieces();
     const f = pieceById(cardDrag.id);
     toast(`放了一件${f ? f.name : '家具'}`);
@@ -60915,11 +60975,31 @@ if (location.search.includes('selftest')) {
       }
     }
 
-    /* 三组数量：结构 8、装饰 10，家具至少 20（含原有 14） */
-    const countOK = STRUCTURE.length === 8 && DECOR.length === 10 && FURNITURE.length >= 20;
+    /* 三组数量：结构 9（含 v7.2 的玻璃顶）、装饰 10，家具至少 20 */
+    const countOK = STRUCTURE.length === 9 && DECOR.length === 10 && FURNITURE.length >= 20;
     const ok = !missingBuild.length && !missingList.length && !dup && !bad.length && countOK;
     return ok ? `ok(${listed.length}件:家具${FURNITURE.length}/结构${STRUCTURE.length}/装饰${DECOR.length},生成器全通)`
       : `FAIL(build=${missingBuild.join(',')},list=${missingList.join(',')},dup=${dup},bad=${bad.join(',')},count=${countOK})`;
+  });
+  /* 吊灯必须依赖玻璃顶（v7.2 补的逻辑）。
+     直接搬场景验证：清空 → 只放吊灯应被拒 → 补玻璃顶 → 应成功 → 按原样恢复。
+     恢复用 placeAt 重建，位置经过同样的 clamp，所以是幂等的。 */
+  step('pendantNeedsRoof', () => {
+    const saved = PIECES.children.map((g) => [
+      g.userData.piece.type, g.position.x, g.position.z, g.rotation.y,
+    ]);
+    PIECES.clear();
+    const blocked = placeAt('pendant', 0.4, -0.5, 0) === null;
+    const blockedHint = lastPlaceError === PLACE_BLOCKED.pendantNoRoof;
+    const roof = placeAt('glassRoof', 0, 0, 0);
+    const allowed = placeAt('pendant', 0.4, -0.5, 0) !== null;
+    /* 恢复原场景 */
+    PIECES.clear();
+    for (const [t, x, z, r] of saved) placeAt(t, x, z, r);
+    const restored = PIECES.children.length === saved.length;
+    const ok = blocked && blockedHint && !!roof && allowed && restored;
+    return ok ? 'ok(无顶拒绝/有顶放行/场景已恢复)'
+      : `FAIL(blocked=${blocked},hint=${blockedHint},roof=${!!roof},allowed=${allowed},restored=${restored})`;
   });
   step('wallArts', () => {
     const inline = [
