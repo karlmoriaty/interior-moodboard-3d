@@ -2866,8 +2866,9 @@ box(W, T, D, 0, -T / 2, 0, shell({ 2: 'floor' }), { cast: false, surface: 'floor
 
 /* 模型直接摆在桌面上，不再自带基座 */
 
-/* 后墙：留一个 2.6 × 1.5 的窗（内侧朝 +z，只有这一面用墙纸） */
-const WIN = { x0: -1.3, x1: 1.3, y0: 0.95, y1: 2.45 };
+/* 后墙：v7.0 改成整面落地玻璃（参考图是通高玻璃 + 黑色细框），
+   只留 0.1 的结构边。窗框改用独立材质，不去动挂画那套 frameMat。 */
+const WIN = { x0: -3.88, x1: 3.88, y0: 0.05, y1: 2.94 };
 const backFaces = shell({ 4: 'wallBack' });
 box(WIN.x0 - X0, H, T, (X0 + WIN.x0) / 2, H / 2, Z0 - T / 2, backFaces, { surface: 'wallBack' });
 box(X1 - WIN.x1, H, T, (WIN.x1 + X1) / 2, H / 2, Z0 - T / 2, backFaces, { surface: 'wallBack' });
@@ -2884,15 +2885,61 @@ box(0.02, 0.07, D, X0 + 0.011, 0.035, 0, trimMat, { cast: false });
 box(W, 0.03, T + 0.01, 0, H - 0.015, Z0 - T / 2, trimMat, { cast: false });
 box(T + 0.01, 0.03, D, X0 - T / 2, H - 0.015, 0, trimMat, { cast: false });
 
-/* 窗框 */
+/* 左墙壁龛搁板（v7.0）：参考图左墙是三层浅搁板，上面摆陶罐、绿植、蜡烛。
+   做成"背板内凹 + 搁板"：背板比墙面深一档，搁板压在上面才像壁龛。 */
+const nookMat = new THREE.MeshStandardMaterial({ color: 0x2b2a28, roughness: 0.94 });
+const shelfMat = new THREE.MeshStandardMaterial({ color: 0x6b5f52, roughness: 0.7, metalness: 0.04 });
+box(0.03, 1.9, 1.34, X0 + 0.015, 1.5, -1.85, nookMat, { cast: false });
+for (const sy of [0.86, 1.42, 1.98]) {
+  box(0.26, 0.03, 1.34, X0 + 0.13, sy, -1.85, shelfMat);
+  /* 搁板下的小斜撑，光打上去有一道影 */
+  for (const bz of [-2.44, -1.26]) {
+    box(0.02, 0.09, 0.02, X0 + 0.24, sy - 0.05, bz, shelfMat, { cast: false });
+  }
+}
+/* 搁板上的陈设：陶罐、蜡烛、小绿植，高度错开 */
+const nookPot = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.065, 0.16, 16), shelfMat);
+nookPot.position.set(X0 + 0.13, 0.86 + 0.095, -2.28);
+nookPot.castShadow = true;
+room.add(nookPot);
+const nookJar = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.045, 0.2, 16), shelfMat);
+nookJar.position.set(X0 + 0.14, 1.42 + 0.115, -2.0);
+nookJar.castShadow = true;
+room.add(nookJar);
+{
+  const leaf = new THREE.IcosahedronGeometry(0.075, 1);
+  const green = new THREE.MeshStandardMaterial({ color: 0x4e6b45, roughness: 0.88 });
+  for (const [yy, zz, sc] of [[1.42 + 0.16, -1.42, 1], [1.42 + 0.22, -1.52, 0.7], [1.98 + 0.13, -1.95, 0.9]]) {
+    const m = new THREE.Mesh(leaf, green);
+    m.position.set(X0 + 0.14, yy, zz);
+    m.scale.setScalar(sc);
+    m.castShadow = true;
+    room.add(m);
+  }
+}
+/* 三支柱状蜡烛（参考图里蜡烛是主角之一） */
+const shelfWax = new THREE.MeshStandardMaterial({ color: 0xece2d0, roughness: 0.82, emissive: 0x2a1a08, emissiveIntensity: 0.4 });
+for (const [zz, h] of [[-2.6, 0.2], [-2.34, 0.14], [-1.05, 0.17]]) {
+  const w = new THREE.Mesh(new THREE.CylinderGeometry(0.026, 0.026, h, 12), shelfWax);
+  w.position.set(X0 + 0.13, 1.98 + h / 2 + 0.015, zz);
+  w.castShadow = true;
+  room.add(w);
+}
+
+/* 窗框：黑色细框。v7.0 单独建材质，避免影响画框。
+   fw 从 0.055 收到 0.032 —— 细框才像现代玻璃幕墙。 */
+const windowFrameMat = new THREE.MeshStandardMaterial({ color: 0x121417, roughness: 0.44, metalness: 0.35 });
 const frameMat = new THREE.MeshStandardMaterial({ color: 0x4a4036, roughness: 0.62 });
-const fw = 0.055;
-box(WIN.x1 - WIN.x0 + fw * 2, fw, 0.1, 0, WIN.y0, Z0 + 0.03, frameMat);
-box(WIN.x1 - WIN.x0 + fw * 2, fw, 0.1, 0, WIN.y1, Z0 + 0.03, frameMat);
-box(fw, WIN.y1 - WIN.y0, 0.1, WIN.x0, (WIN.y0 + WIN.y1) / 2, Z0 + 0.03, frameMat);
-box(fw, WIN.y1 - WIN.y0, 0.1, WIN.x1, (WIN.y0 + WIN.y1) / 2, Z0 + 0.03, frameMat);
-box(0.035, WIN.y1 - WIN.y0, 0.09, 0, (WIN.y0 + WIN.y1) / 2, Z0 + 0.03, frameMat);
-box(WIN.x1 - WIN.x0, 0.035, 0.09, 0, 1.72, Z0 + 0.03, frameMat);
+const fw = 0.032;
+box(WIN.x1 - WIN.x0 + fw * 2, fw, 0.1, 0, WIN.y0, Z0 + 0.03, windowFrameMat);
+box(WIN.x1 - WIN.x0 + fw * 2, fw, 0.1, 0, WIN.y1, Z0 + 0.03, windowFrameMat);
+box(fw, WIN.y1 - WIN.y0, 0.1, WIN.x0, (WIN.y0 + WIN.y1) / 2, Z0 + 0.03, windowFrameMat);
+box(fw, WIN.y1 - WIN.y0, 0.1, WIN.x1, (WIN.y0 + WIN.y1) / 2, Z0 + 0.03, windowFrameMat);
+/* 竖梃 3 道 + 横档 1 道：整面玻璃靠这几根细线才不是一块塑料膜 */
+for (const mx of [-1.94, 0, 1.94]) {
+  box(0.028, WIN.y1 - WIN.y0, 0.09, mx, (WIN.y0 + WIN.y1) / 2, Z0 + 0.03, windowFrameMat);
+}
+box(WIN.x1 - WIN.x0, 0.028, 0.09, 0, 2.16, Z0 + 0.03, windowFrameMat);
 
 /* 窗玻璃（很淡的一层） */
 const glass = new THREE.Mesh(
@@ -3697,6 +3744,125 @@ function makeLoveseat() {
   return g;
 }
 
+/* ============================== 5.9 参考图家具（v7.0） ============================== */
+/* 四件：L 形转角沙发、悬挂圆筒壁炉、圣诞树、三角钢琴。
+   按参考图做的，都接进同一套拖放 / 边界 / 编码逻辑。 */
+
+function makeCornerSofa() {
+  const g = pieceGroup('cornerSofa', 2.62, 2.02, 0.86);
+  const mat = surfaceMat.sofa;
+  const w = 2.62, d = 2.02, aw = 0.95;
+  /* 长边沿 x（靠后），短边沿 z（靠左）—— L 形的两个臂 */
+  addBox(g, w, 0.18, aw, 0, 0.22, -d / 2 + aw / 2, mat, 'sofa');
+  addBox(g, w, 0.50, 0.16, 0, 0.60, -d / 2 + 0.08, mat, 'sofa');
+  addBox(g, aw, 0.18, d - aw, -w / 2 + aw / 2, 0.22, aw / 2, mat, 'sofa');
+  addBox(g, 0.16, 0.50, d - aw, -w / 2 + 0.08, 0.60, aw / 2, mat, 'sofa');
+  /* 外侧扶手段 */
+  addBox(g, 0.16, 0.46, aw, w / 2 - 0.08, 0.53, -d / 2 + aw / 2, mat, 'sofa');
+  addBox(g, aw, 0.46, 0.16, -w / 2 + aw / 2, 0.53, d / 2 - 0.08, mat, 'sofa');
+  /* 坐垫：长边两块 + 短边一块 */
+  for (const sx of [-0.52, 0.62]) {
+    addBox(g, 1.1, 0.17, aw - 0.24, sx, 0.44, -d / 2 + aw / 2 + 0.05, mat, 'sofa');
+  }
+  addBox(g, aw - 0.24, 0.17, 0.78, -w / 2 + aw / 2 + 0.05, 0.44, aw / 2 + 0.1, mat, 'sofa');
+  /* 靠枕 + 一条搭毯 */
+  for (const [px, pz, rot] of [[-0.92, -d / 2 + 0.3, 0.12], [0.42, -d / 2 + 0.3, -0.1]]) {
+    const p = addBox(g, 0.36, 0.32, 0.14, px, 0.70, pz, accentMat);
+    p.rotation.z = rot;
+  }
+  addBox(g, 0.42, 0.035, 0.62, -w / 2 + aw / 2, 0.79, 1.0, throwMat);
+  for (const [lx, lz] of [[-w / 2 + 0.12, -d / 2 + 0.12], [w / 2 - 0.12, -d / 2 + 0.12],
+    [-w / 2 + 0.12, d / 2 - 0.12], [-0.2, -d / 2 + 0.12]]) {
+    addCyl(g, 0.024, 0.02, 0.13, lx, 0.075, lz, legMat, 10);
+  }
+  return g;
+}
+
+function makeFireplace() {
+  const g = pieceGroup('fireplace', 0.78, 0.54, 2.6);
+  const metal = new THREE.MeshStandardMaterial({ color: 0x1c1d20, roughness: 0.42, metalness: 0.72 });
+  /* 悬挂杆 + 顶盖 */
+  addCyl(g, 0.018, 0.018, 1.28, 0, 1.96, 0, metal, 8);
+  addCyl(g, 0.2, 0.2, 0.03, 0, 1.31, 0, metal, 18);
+  /* 圆筒炉身：横放，正面开口 */
+  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.62, 22, 1, true), metal);
+  body.rotation.z = Math.PI / 2;
+  body.position.set(0, 0.94, 0);
+  body.castShadow = true;
+  g.add(body);
+  /* 两端封板 */
+  for (const sx of [-0.31, 0.31]) {
+    addCyl(g, 0.27, 0.27, 0.02, sx, 0.94, 0, metal, 22).rotation.z = Math.PI / 2;
+  }
+  /* 炉膛里的火：几片朝向不同的小锥体，自发光 */
+  const flameMat = new THREE.MeshBasicMaterial({ color: 0xff8a2a, toneMapped: false });
+  const flameMat2 = new THREE.MeshBasicMaterial({ color: 0xffc65a, toneMapped: false });
+  for (const [fx, fz, s2, m] of [[-0.1, 0.02, 0.9, flameMat], [0.02, -0.03, 1.15, flameMat2], [0.12, 0.04, 0.8, flameMat]]) {
+    const f = new THREE.Mesh(new THREE.ConeGeometry(0.07 * s2, 0.2 * s2, 8), m);
+    f.position.set(fx, 0.86, fz);
+    g.add(f);
+  }
+  const fire = new THREE.PointLight(0xff8a3c, 0, 5.2 * MODEL_SCALE, 2);
+  fire.position.set(0, 0.94, 0);
+  g.add(fire);
+  g.userData.fire = fire;
+  return g;
+}
+
+function makeTree() {
+  const g = pieceGroup('tree', 0.92, 0.92, 1.7);
+  const needle = new THREE.MeshStandardMaterial({ color: 0x2c452f, roughness: 0.92 });
+  addCyl(g, 0.045, 0.055, 0.34, 0, 0.17, 0, legMat, 10);
+  for (const [yy, r, h] of [[0.52, 0.42, 0.52], [0.9, 0.33, 0.46], [1.24, 0.24, 0.4], [1.52, 0.14, 0.3]]) {
+    const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 14), needle);
+    c.position.set(0, yy, 0);
+    c.castShadow = true;
+    g.add(c);
+  }
+  /* 串灯：小球绕树分布，暖白 */
+  const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0, toneMapped: false });
+  for (let i = 0; i < 22; i++) {
+    const a = i * 2.399;
+    const yy = 0.42 + (i / 22) * 1.16;
+    const rr = 0.4 * (1 - i / 30) + 0.05;
+    const b = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 5), bulbMat);
+    b.position.set(Math.cos(a) * rr, yy, Math.sin(a) * rr);
+    g.add(b);
+  }
+  const glow = new THREE.PointLight(0xffc98a, 0, 2.8 * MODEL_SCALE, 2);
+  glow.position.set(0, 1.0, 0);
+  g.add(glow);
+  g.userData.fire = glow;
+  return g;
+}
+
+function makePiano() {
+  const g = pieceGroup('piano', 1.9, 1.35, 1.02);
+  const black = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.3, metalness: 0.28 });
+  const keys = new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.6 });
+  /* 琴体：用一个平的楔形近似三角钢琴的弧线 */
+  const bodyMain = addBox(g, 1.5, 0.3, 1.02, -0.18, 0.72, -0.1, black);
+  bodyMain.rotation.y = 0.03;
+  const tail = addBox(g, 0.52, 0.28, 0.78, 0.82, 0.71, -0.06, black);
+  tail.rotation.y = -0.12;
+  /* 琴盖掀起来 */
+  const lid = addBox(g, 1.46, 0.03, 0.98, -0.18, 0.9, -0.12, black);
+  lid.rotation.set(-0.30, 0.03, 0);
+  /* 键盘：白键 + 黑键的节奏 */
+  addBox(g, 0.72, 0.07, 0.24, -0.86, 0.78, 0.12, keys);
+  for (let k = 0; k < 10; k++) {
+    if (k % 7 === 2 || k % 7 === 6) continue;
+    addBox(g, 0.028, 0.03, 0.13, -1.18 + k * 0.067, 0.815, 0.09, black);
+  }
+  /* 三条腿 + 谱架 */
+  for (const [lx, lz] of [[-1.05, 0.42], [-0.1, 0.48], [0.86, 0.3]]) {
+    addCyl(g, 0.035, 0.028, 0.66, lx, 0.33, lz, black, 10);
+  }
+  const stand = addBox(g, 0.7, 0.36, 0.02, -0.9, 1.02, -0.2, black);
+  stand.rotation.x = -0.25;
+  return g;
+}
+
 const BUILD = {
   sofa: makeSofa, armchair: makeArmchair, coffeeTable: makeCoffeeTable, sideTable: makeSideTable,
   diningTable: makeDiningTable, chair: makeChair, shelf: makeShelf, lamp: makeLamp, plant: makePlant,
@@ -3713,6 +3879,8 @@ const BUILD = {
   /* v6.0：家具补充 */
   bed: makeBed, wardrobe: makeWardrobe, desk: makeDesk, drawer: makeDrawer,
   tvStand: makeTvStand, loveseat: makeLoveseat,
+  /* v7.0：参考图家具 */
+  cornerSofa: makeCornerSofa, fireplace: makeFireplace, tree: makeTree, piano: makePiano,
 };
 
 function placePiece(type, x, z, rot) {
@@ -3788,29 +3956,39 @@ function syncPieces() {
 }
 
 /* 地毯（也是一个可换材料的“面”）：加一圈深色包边，才像一块真正的毯子 */
+/* v7.0：地毯按参考图放大到 5.4×3.9，压住沙发+茶几这一整块 */
 const rugEdge = new THREE.Mesh(
-  new THREE.BoxGeometry(3.9, 0.006, 2.78),
+  new THREE.BoxGeometry(5.58, 0.006, 4.08),
   new THREE.MeshStandardMaterial({ color: 0x6b5542, roughness: 0.95 }),
 );
-rugEdge.position.set(0.85, 0.004, -1.5);
+rugEdge.position.set(0.3, 0.004, -1.3);
 room.add(rugEdge);
-const rug = new THREE.Mesh(new THREE.BoxGeometry(3.72, 0.014, 2.6), surfaceMat.rug);
-rug.position.set(0.85, 0.011, -1.5);
+const rug = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.014, 3.9), surfaceMat.rug);
+rug.position.set(0.3, 0.011, -1.3);
 rug.receiveShadow = true;
 rug.userData.surface = 'rug';
 room.add(rug);
 
-/* 初始布置：窗边阅读角，左边留一张小餐桌 */
+/* 初始布置（v7.0）：照参考图排——L 形沙发靠左后、木茶几居中、
+   三角钢琴贴窗、悬挂壁炉在右、圣诞树右前角，中间留出地毯。
+   灯与蜡烛自己会亮（lampK 控制），夜里就是参考图那种暖橙。 */
 const initialPieces = [
-  ['sofa', 1.5, -2.3, 0],
-  ['coffeeTable', 1.45, -1.12, 0],
-  ['armchair', -1.35, -1.15, 1.2],
-  ['lamp', 3.1, -2.42, 0],
-  ['plant', -0.62, -2.55, 0.4],
-  ['diningTable', -2.1, 1.45, 0],
-  ['chair', -2.1, 0.65, 0],
-  ['chair', -2.1, 2.25, Math.PI],
-  ['shelf', -3.55, -0.55, Math.PI / 2],
+  ['cornerSofa', -0.85, -1.15, 0],
+  ['coffeeTable', -0.50, 0.35, 0],
+  ['piano', -3.05, -2.35, 0],
+  /* 壁炉靠右墙、正对沙发：参考图里它是房间的第二个光源 */
+  ['fireplace', 3.05, -0.10, -Math.PI / 2],
+  ['tree', 2.95, 1.75, 0],
+  ['sideTable', -2.45, 0.30, 0],
+  ['plant', 1.30, -2.65, 0.3],
+  ['pendant', -0.50, 0.35, 0],
+  /* 烛光群：参考图里满地都是蜡烛，是氛围的主角 */
+  ['candle', -1.10, 0.66, 0],
+  ['candle', -0.05, 0.70, 0],
+  ['candle', 0.62, 0.30, 0],
+  ['candle', -2.45, 0.62, 0],
+  ['bookStack', -0.16, 0.28, 0.4],
+  ['bookStack', 0.46, 0.62, -0.3],
 ];
 
 /* ============================== 6. 应用材料 ============================== */
@@ -4125,6 +4303,8 @@ function setHour(h, silent) {
   windowCast.material.opacity = lampK * 0.52;
   PIECES.traverse((o) => {
     if (o.userData.bulb) o.userData.bulb.intensity = lampK * 3.0 * MODEL_SCALE_SQ;
+    /* v7.0：壁炉火焰与圣诞树串灯。壁炉比灯暗一档，才有"火光"和"灯"的区别。 */
+    if (o.userData.fire) o.userData.fire.intensity = lampK * 4.2 * MODEL_SCALE_SQ;
     if (o.userData.halo) o.userData.halo.material.opacity = lampK * 0.48;
   });
 
@@ -4263,6 +4443,10 @@ const FURNITURE = [
   { id: 'lamp', name: '落地灯', sub: '1.60 m' },
   { id: 'pendant', name: '吊灯', sub: '吊装' },
   { id: 'plant', name: '绿植', sub: '1.20 m' },
+  { id: 'cornerSofa', name: '转角沙发', sub: '2.62 m' },
+  { id: 'fireplace', name: '悬挂壁炉', sub: 'h 2.60' },
+  { id: 'tree', name: '圣诞树', sub: '1.70 m' },
+  { id: 'piano', name: '三角钢琴', sub: '1.90 m' },
 ];
 
 /* 结构构件：可自由摆放的墙、窗、门、柱、地台、栏杆。
@@ -4756,7 +4940,8 @@ for (const b of $$('.ticks button')) {
 /* 情绪预设 */
 const PRESETS = {
   warm: {
-    mats: { floor: ['wood', 'oak'], wallBack: ['paint', 'chalk'], wallSide: ['paint', 'clay'], sofa: ['fabric', 'linen'], rug: ['fabric', 'tweed'], woodwork: ['wood', 'walnut'] },
+    /* v7.0：墙从陶土色改米白、地毯改羊羔绒 —— 参考图是浅灰墙 + 浅色地毯 */
+    mats: { floor: ['wood', 'oak'], wallBack: ['paint', 'chalk'], wallSide: ['paint', 'chalk'], sofa: ['fabric', 'linen'], rug: ['fabric', 'boucle'], woodwork: ['wood', 'walnut'] },
     hour: 18.6,
   },
   clear: {
