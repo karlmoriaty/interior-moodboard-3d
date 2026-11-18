@@ -55424,6 +55424,7 @@ const LIB = {
     { id: 'ochre', name: '赭黄', color: '#c39653', dark: '#997038', rough: 0.86 },
     { id: 'moss', name: '苔绿', color: '#69724f', dark: '#4c5439', rough: 0.86 },
     { id: 'ink', name: '墨黑', color: '#2b2b2f', dark: '#18181b', rough: 0.82 },
+    { id: 'ash', name: '浅灰', color: '#a9a49a', dark: '#8a857c', rough: 0.92 },
   ],
 };
 
@@ -58733,13 +58734,23 @@ function makePlant() {
 }
 
 function makePendant() {
-  const g = pieceGroup('pendant', 0.52, 0.52, 3);
-  addCyl(g, 0.007, 0.007, 0.68, 0, 2.66, 0, legMat, 6);
-  const shade = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.28, 26, 1, true), pendantMat);
-  shade.position.set(0, 2.2, 0);
-  g.add(shade);
-  const bulb = new THREE.PointLight(0xffc089, 0, 6.5 * MODEL_SCALE, 2);
-  bulb.position.set(0, 2.1, 0);
+  /* v7.1：参考图的吊灯是一只白色浅碟，几乎贴着桌面高度吊下来。
+     原来的深木锥形太"侘寂"，和这间客厅不是一回事。 */
+  const g = pieceGroup('pendant', 0.66, 0.66, 3);
+  addCyl(g, 0.006, 0.006, 0.9, 0, 2.55, 0, legMat, 6);
+  const dishMat = new THREE.MeshStandardMaterial({
+    color: 0xf5eee2, roughness: 0.82, metalness: 0.02,
+    emissive: 0xffd7a8, emissiveIntensity: 0.5, side: THREE.DoubleSide,
+  });
+  /* 碟身：上宽下窄的浅碗，边缘薄，底下收一圈 */
+  const dish = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.30, 0.075, 30, 1, true), dishMat);
+  dish.position.set(0, 2.08, 0);
+  g.add(dish);
+  const dishBottom = new THREE.Mesh(new THREE.CylinderGeometry(0.30, 0.30, 0.012, 30), dishMat);
+  dishBottom.position.set(0, 2.045, 0);
+  g.add(dishBottom);
+  const bulb = new THREE.PointLight(0xffc089, 0, 7.2 * MODEL_SCALE, 2);
+  bulb.position.set(0, 1.99, 0);
   g.add(bulb);
   g.userData.bulb = bulb;
   return g;
@@ -58993,11 +59004,11 @@ function makeSculpture() {
 }
 
 function makeCandle() {
-  const g = pieceGroup('candle', 0.26, 0.26, 0.52);
+  const g = pieceGroup('candle', 0.3, 0.3, 0.6);
   const wax = new THREE.MeshStandardMaterial({ color: 0xe8dfcd, roughness: 0.8 });
   const flameMat = new THREE.MeshBasicMaterial({ color: 0xffc879, toneMapped: false });
-  for (const [x, z, h] of [[-0.07, 0.02, 0.34], [0.05, -0.05, 0.26], [0.02, 0.08, 0.18]]) {
-    addCyl(g, 0.04, 0.04, h, x, h / 2, z, wax, 14);
+  for (const [x, z, h] of [[-0.08, 0.02, 0.48], [0.06, -0.06, 0.36], [0.02, 0.09, 0.26]]) {
+    addCyl(g, 0.055, 0.055, h, x, h / 2, z, wax, 16);
     const fl = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), flameMat);
     fl.position.set(x, h + 0.02, z);
     fl.scale.y = 1.7;
@@ -59223,6 +59234,64 @@ function makePiano() {
   return g;
 }
 
+/* ---------- v7.1：烛光组 ---------- */
+/* 参考图的氛围一半来自蜡烛：茶几上、地上、边几上全是。
+   这里做两种：一组落地柱蜡（带铜托盘）、一只细高金属烛台。
+   两者都带一个很弱的点光源 —— 烛光要参与照明，不能只靠自发光色块。 */
+
+const waxMat = new THREE.MeshStandardMaterial({
+  color: 0xece2d0, roughness: 0.84, emissive: 0x3a2408, emissiveIntensity: 0.5,
+});
+const flameMats = [
+  new THREE.MeshBasicMaterial({ color: 0xffd08a, toneMapped: false }),
+  new THREE.MeshBasicMaterial({ color: 0xffb066, toneMapped: false }),
+];
+
+function candleFlame(parent, x, y, z, s1 = 1) {
+  const f = new THREE.Mesh(new THREE.SphereGeometry(0.026 * s1, 8, 6), flameMats[Math.random() > 0.5 ? 0 : 1]);
+  f.position.set(x, y, z);
+  f.scale.y = 1.9;
+  parent.add(f);
+  return f;
+}
+
+function makeCandleCluster() {
+  const g = pieceGroup('candleCluster', 0.52, 0.52, 1.02);
+  /* 铜托盘 */
+  addCyl(g, 0.25, 0.26, 0.02, 0, 0.01, 0, aptBrassMat, 24);
+  /* 五支不同高度的柱蜡，位置错开 */
+  const set = [
+    [-0.11, 0.07, 0.62, 0.062], [0.03, -0.10, 0.44, 0.070],
+    [0.12, 0.06, 0.86, 0.056], [-0.02, 0.13, 0.30, 0.076],
+    [-0.15, -0.11, 0.50, 0.050],
+  ];
+  for (const [cx, cz, h, r] of set) {
+    addCyl(g, r, r, h, cx, h / 2 + 0.018, cz, waxMat, 16);
+    candleFlame(g, cx, h + 0.03, cz, r / 0.04);
+  }
+  const glow = new THREE.PointLight(0xffa860, 0, 4.2 * MODEL_SCALE, 2);
+  glow.position.set(0, 0.62, 0);
+  g.add(glow);
+  g.userData.candle = glow;
+  return g;
+}
+
+function makeCandleStand() {
+  const g = pieceGroup('candleStand', 0.3, 0.3, 1.26);
+  addCyl(g, 0.10, 0.11, 0.016, 0, 0.008, 0, aptBrassMat, 22);
+  addCyl(g, 0.013, 0.013, 1.02, 0, 0.53, 0, aptBrassMat, 10);
+  /* 中段一个细颈珠，参考图里这类烛台都有 */
+  addCyl(g, 0.035, 0.035, 0.05, 0, 0.62, 0, aptBrassMat, 14);
+  addCyl(g, 0.075, 0.05, 0.03, 0, 1.06, 0, aptBrassMat, 18);
+  addCyl(g, 0.052, 0.052, 0.22, 0, 1.13, 0, waxMat, 16);
+  candleFlame(g, 0, 1.28, 0, 1.5);
+  const glow = new THREE.PointLight(0xffa860, 0, 3.0 * MODEL_SCALE, 2);
+  glow.position.set(0, 1.28, 0);
+  g.add(glow);
+  g.userData.candle = glow;
+  return g;
+}
+
 const BUILD = {
   sofa: makeSofa, armchair: makeArmchair, coffeeTable: makeCoffeeTable, sideTable: makeSideTable,
   diningTable: makeDiningTable, chair: makeChair, shelf: makeShelf, lamp: makeLamp, plant: makePlant,
@@ -59241,6 +59310,7 @@ const BUILD = {
   tvStand: makeTvStand, loveseat: makeLoveseat,
   /* v7.0：参考图家具 */
   cornerSofa: makeCornerSofa, fireplace: makeFireplace, tree: makeTree, piano: makePiano,
+  candleCluster: makeCandleCluster, candleStand: makeCandleStand,
 };
 
 function placePiece(type, x, z, rot) {
@@ -59332,23 +59402,24 @@ room.add(rug);
 /* 初始布置（v7.0）：照参考图排——L 形沙发靠左后、木茶几居中、
    三角钢琴贴窗、悬挂壁炉在右、圣诞树右前角，中间留出地毯。
    灯与蜡烛自己会亮（lampK 控制），夜里就是参考图那种暖橙。 */
+/* v7.1 布局：照参考图的关系摆——
+   沙发背靠左墙、面朝右（壁炉与窗），茶几在它右前方，吊灯压在茶几上，
+   钢琴退到右后当背景，壁炉靠右墙正对沙发，圣诞树右前角，
+   蜡烛沿"沙发—茶几—壁炉"这条线铺开。 */
 const initialPieces = [
-  ['cornerSofa', -0.85, -1.15, 0],
-  ['coffeeTable', -0.50, 0.35, 0],
-  ['piano', -3.05, -2.35, 0],
-  /* 壁炉靠右墙、正对沙发：参考图里它是房间的第二个光源 */
-  ['fireplace', 3.05, -0.10, -Math.PI / 2],
-  ['tree', 2.95, 1.75, 0],
-  ['sideTable', -2.45, 0.30, 0],
-  ['plant', 1.30, -2.65, 0.3],
-  ['pendant', -0.50, 0.35, 0],
-  /* 烛光群：参考图里满地都是蜡烛，是氛围的主角 */
-  ['candle', -1.10, 0.66, 0],
-  ['candle', -0.05, 0.70, 0],
-  ['candle', 0.62, 0.30, 0],
-  ['candle', -2.45, 0.62, 0],
-  ['bookStack', -0.16, 0.28, 0.4],
-  ['bookStack', 0.46, 0.62, -0.3],
+  ['cornerSofa', -2.95, -0.60, Math.PI / 2],
+  ['coffeeTable', 0.35, -0.55, 0],
+  ['pendant', 0.35, -0.55, 0],
+  ['piano', 2.55, -2.30, 0],
+  ['fireplace', 3.35, -0.55, -Math.PI / 2],
+  ['tree', 2.95, 1.85, 0],
+  ['sideTable', -2.40, 1.15, 0],
+  ['candleCluster', 1.45, 0.35, 0],
+  ['candleStand', -1.45, 1.05, 0],
+  ['candle', -0.42, 1.05, 0],
+  ['candle', 0.95, -1.65, 0],
+  ['bookStack', 0.05, -0.20, 0.4],
+  ['plant', 0.90, -2.70, 0.3],
 ];
 
 /* ============================== 6. 应用材料 ============================== */
@@ -59656,7 +59727,8 @@ function setHour(h, silent) {
   aptCove.material.opacity = lampK * 0.42;
   aptPlinthGlow.material.opacity = lampK * 0.14;
   /* 模型内的点光：距离缩了 s 倍，强度要缩 s² 才等价（衰减是 1/d²） */
-  coveLight.intensity = lampK * 2.6 * MODEL_SCALE_SQ;
+  /* v7.1：从 2.6 压到 1.7 —— 参考图里房间的亮度主要来自蜡烛，不是顶灯 */
+  coveLight.intensity = lampK * 1.05 * MODEL_SCALE_SQ;
   cove.visible = lampK > 0.04;
   wallGlow.material.opacity = lampK * 0.13;
   floorPool.material.opacity = lampK * 0.30;
@@ -59665,6 +59737,8 @@ function setHour(h, silent) {
     if (o.userData.bulb) o.userData.bulb.intensity = lampK * 3.0 * MODEL_SCALE_SQ;
     /* v7.0：壁炉火焰与圣诞树串灯。壁炉比灯暗一档，才有"火光"和"灯"的区别。 */
     if (o.userData.fire) o.userData.fire.intensity = lampK * 4.2 * MODEL_SCALE_SQ;
+    /* v7.1：烛光单独给一条更亮的曲线 —— 参考图里房间的亮度就是它撑起来的 */
+    if (o.userData.candle) o.userData.candle.intensity = lampK * 7.5 * MODEL_SCALE_SQ;
     if (o.userData.halo) o.userData.halo.material.opacity = lampK * 0.48;
   });
 
@@ -59807,6 +59881,8 @@ const FURNITURE = [
   { id: 'fireplace', name: '悬挂壁炉', sub: 'h 2.60' },
   { id: 'tree', name: '圣诞树', sub: '1.70 m' },
   { id: 'piano', name: '三角钢琴', sub: '1.90 m' },
+  { id: 'candleCluster', name: '烛光组', sub: '5 支' },
+  { id: 'candleStand', name: '烛台', sub: 'h 1.26' },
 ];
 
 /* 结构构件：可自由摆放的墙、窗、门、柱、地台、栏杆。
@@ -60301,7 +60377,8 @@ for (const b of $$('.ticks button')) {
 const PRESETS = {
   warm: {
     /* v7.0：墙从陶土色改米白、地毯改羊羔绒 —— 参考图是浅灰墙 + 浅色地毯 */
-    mats: { floor: ['wood', 'oak'], wallBack: ['paint', 'chalk'], wallSide: ['paint', 'chalk'], sofa: ['fabric', 'linen'], rug: ['fabric', 'boucle'], woodwork: ['wood', 'walnut'] },
+    /* v7.1：墙从米白换浅灰 —— 白墙反光太强，烛光撑不起暗调 */
+    mats: { floor: ['wood', 'oak'], wallBack: ['paint', 'ash'], wallSide: ['paint', 'ash'], sofa: ['fabric', 'linen'], rug: ['fabric', 'boucle'], woodwork: ['wood', 'walnut'] },
     hour: 18.6,
   },
   clear: {
