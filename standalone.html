@@ -57580,86 +57580,110 @@ scene.add(aptArt);
     add(rail);
   }
 
-  /* ---- 右墙的障子推拉门（v6.8 重做）----
-     前一版的问题不是尺寸，是"不像门"：
-     ① 纸用 shojiMat（#e9e1d1 + 自发光 0.35），在深胡桃墙上像一块发光的板子，
-        整面墙最亮的就是它 —— 抢眼；
-     ② 每扇只有 3 横 1 竖、骨宽 0.035，格子太大，读起来像围栏；
-     ③ 门扇平贴墙面，没有门套进深、没有上轨下槛，看起来是一张贴纸。
-     重做四件事：把纸压暗到暖灰、格子加密变细、门扇缩进门套形成阴影、
-     补上鸭居（上轨）与敷居（下槛），再加凹槽式引手。
-     尺寸沿用 v6.7 的 2.40×2.90（门心 -0.875）。 */
+  /* ---- 右墙的障子推拉门（v6.9 第三次重做）----
+     v6.8 之后仍然"不像门"，放大看是三件事：
+     ① 纸是一块死米黄，没有任何明暗变化 —— 读成塑料板/木饰面，不像纸；
+     ② 格子只有 3 列 × 6 行、每格 0.39×0.45，接近正方，读成"木格窗"；
+     ③ 框和格子是纯黑，与米黄纸硬碰硬，像黑木条贴上去。
+     v6.9 对症：
+     ① 纸加一层背后漫射渐变（中心亮、四角压暗）+ 暖白底色 + 自发光 0.20；
+     ② 格子加密到 5 列 × 8 行，骨宽 0.018，格形细长；
+     ③ 框改用深褐 #3a2f24 而不是纯黑，对比降一档；
+     另加一块"门洞深处"的暗背板，门套压在上面，门才有嵌进墙里的深度。
+     尺寸不变：2.40×2.90，门心 z=-0.875。 */
   const rDoorZ = -0.875, rDoorH = 2.90, rLeaf = 1.18;
-  /* 门纸：比障子墙暗一档。同一张纹理，靠 color 相乘压暗，不新造图。
-     自发光固定 0.10，夜里不会变成一块白灯箱。 */
+
+  /* 门纸纹理：背后有柔和漫射光。这一层渐变就是"纸"和"板"的分界。 */
+  const doorPaperTex = (() => {
+    const c = document.createElement("canvas");
+    c.width = 256; c.height = 640;
+    const g = c.getContext("2d");
+    g.fillStyle = "#ded2ba"; g.fillRect(0, 0, 256, 640);
+    const rg = g.createRadialGradient(128, 230, 24, 128, 320, 410);
+    rg.addColorStop(0, "rgba(255,250,238,0.68)");
+    rg.addColorStop(0.5, "rgba(255,250,238,0.20)");
+    rg.addColorStop(1, "rgba(40,29,16,0.24)");
+    g.fillStyle = rg; g.fillRect(0, 0, 256, 640);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  })();
   const doorPaperMat = new THREE.MeshStandardMaterial({
-    color: 0xcabfa8, roughness: 0.96, metalness: 0,
-    emissive: 0x3b3327, emissiveIntensity: 0.10, side: THREE.DoubleSide,
+    map: doorPaperTex, roughness: 0.97, metalness: 0,
+    emissive: 0x6a5540, emissiveIntensity: 0.20, side: THREE.DoubleSide,
   });
   const doorFrameMat = new THREE.MeshStandardMaterial({
-    map: tableTex, color: 0x5c4a38, roughness: 0.72, metalness: 0.04,
-    emissive: 0x140f0a, emissiveIntensity: 0.4,
+    color: 0x3a2f24, roughness: 0.68, metalness: 0.05,
+    emissive: 0x120d08, emissiveIntensity: 0.35,
   });
   aptGlowMats.push(doorFrameMat);
 
-  /* 门套：左右立梃 + 上鸭居 + 下敷居。
-     立梃比门扇凸出 0.06，门扇缩在里侧 —— 这道进深就是"洞"的感觉。 */
-  for (const dz of [-1.235, 1.235]) {
-    const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.10, rDoorH + 0.12, 0.07), doorFrameMat);
-    jamb.position.set(APT.halfW - 0.05, (rDoorH + 0.12) / 2, rDoorZ + dz);
+  /* 门洞深处：一块比门洞略大的暗板，门套压在上面。
+     没有这一层，门就是贴在墙上的一张板。 */
+  const recess = new THREE.Mesh(
+    new THREE.PlaneGeometry(2.62, rDoorH + 0.18),
+    new THREE.MeshStandardMaterial({ color: 0x100d0a, roughness: 1 }),
+  );
+  recess.rotation.y = -Math.PI / 2;
+  recess.position.set(APT.halfW - 0.004, (rDoorH + 0.18) / 2, rDoorZ);
+  add(recess);
+
+  /* 门套：左右立梃 + 上鸭居 + 下敷居。立梃凸出墙面 0.04，压住暗板边缘。 */
+  for (const dz of [-1.255, 1.255]) {
+    const jamb = new THREE.Mesh(new THREE.BoxGeometry(0.09, rDoorH + 0.16, 0.08), doorFrameMat);
+    jamb.position.set(APT.halfW - 0.045, (rDoorH + 0.16) / 2, rDoorZ + dz);
     add(jamb);
   }
-  /* 鸭居（上轨）：一道带凹槽的横梁 */
-  const kamoi = new THREE.Mesh(new THREE.BoxGeometry(0.11, 0.10, 2.56), doorFrameMat);
-  kamoi.position.set(APT.halfW - 0.05, rDoorH + 0.05, rDoorZ);
+  const kamoi = new THREE.Mesh(new THREE.BoxGeometry(0.10, 0.085, 2.62), doorFrameMat);
+  kamoi.position.set(APT.halfW - 0.045, rDoorH + 0.07, rDoorZ);
   add(kamoi);
-  const kamoiGroove = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.02, 2.56), aptTrimMat);
-  kamoiGroove.position.set(APT.halfW - 0.095, rDoorH + 0.005, rDoorZ);
+  const kamoiGroove = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.018, 2.62), aptTrimMat);
+  kamoiGroove.position.set(APT.halfW - 0.088, rDoorH + 0.024, rDoorZ);
   add(kamoiGroove);
-  /* 敷居（下槛）：贴地薄轨，两扇各一条 */
-  for (const dz of [-0.60, 0.60]) {
-    const shikii = new THREE.Mesh(new THREE.BoxGeometry(0.07, 0.022, 1.22), aptTrimMat);
-    shikii.position.set(APT.halfW - 0.055, 0.011, rDoorZ + dz);
-    add(shikii);
-  }
+  /* 敷居（下槛）：一道压在地面的木轨，门扇底留 0.02 的阴影缝 */
+  const shikii = new THREE.Mesh(new THREE.BoxGeometry(0.085, 0.03, 2.60), doorFrameMat);
+  shikii.position.set(APT.halfW - 0.05, 0.015, rDoorZ);
+  add(shikii);
 
-  /* 两扇门：错开 0.04 的轨道，中缝处前扇压后扇，是推拉门该有的样子 */
+  /* 两扇门：错开 0.03 的轨道，中缝前扇压后扇 */
   for (const dz of [-0.60, 0.60]) {
-    const px = dz < 0 ? APT.halfW - 0.085 : APT.halfW - 0.045;
-    const paper = new THREE.Mesh(new THREE.BoxGeometry(0.028, rDoorH - 0.08, rLeaf - 0.05), doorPaperMat);
-    paper.position.set(px, rDoorH / 2, rDoorZ + dz);
+    const px = dz < 0 ? APT.halfW - 0.078 : APT.halfW - 0.048;
+    const paper = new THREE.Mesh(new THREE.BoxGeometry(0.024, rDoorH - 0.10, rLeaf - 0.04), doorPaperMat);
+    paper.position.set(px, (rDoorH - 0.02) / 2, rDoorZ + dz);
     add(paper);
-    /* 每扇的门框：上下 + 左右。框宽 0.055，比纸厚，读得出骨架 */
+
+    /* 每扇的边梃：上下 + 左右，宽 0.045 */
+    const innerW = rLeaf - 0.09;
+    const innerH = rDoorH - 0.11;
     for (const [w, h, d, dy, dzz] of [
-      [0.06, 0.055, rLeaf, rDoorH - 0.03, 0],
-      [0.06, 0.055, rLeaf, 0.03, 0],
-      [0.06, rDoorH - 0.08, 0.055, rDoorH / 2, -(rLeaf / 2 - 0.028)],
-      [0.06, rDoorH - 0.08, 0.055, rDoorH / 2, rLeaf / 2 - 0.028],
+      [0.05, 0.045, rLeaf, rDoorH - 0.02, 0],
+      [0.05, 0.045, rLeaf, 0.025, 0],
+      [0.05, rDoorH - 0.06, 0.045, (rDoorH - 0.02) / 2, -(rLeaf / 2 - 0.023)],
+      [0.05, rDoorH - 0.06, 0.045, (rDoorH - 0.02) / 2, rLeaf / 2 - 0.023],
     ]) {
       const fr = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), doorFrameMat);
-      fr.position.set(px - 0.006, dy, rDoorZ + dz + dzz);
+      fr.position.set(px - 0.004, dy, rDoorZ + dz + dzz);
       add(fr);
     }
-    /* 细密格子：5 道横骨 + 2 道竖骨（3 列 × 6 行）。骨宽 0.022，不再是围栏。 */
-    for (let i = 1; i <= 5; i++) {
-      const hy = 0.06 + ((rDoorH - 0.16) * i) / 6;
-      const hb = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.022, rLeaf - 0.10), doorFrameMat);
-      hb.position.set(px - 0.005, hy, rDoorZ + dz);
+    /* 细密格子：5 列 × 7 行，骨宽 0.018。格形细长，才像障子而不是窗。 */
+    for (let i = 1; i < 7; i++) {
+      const hy = 0.045 + (innerH * i) / 7;
+      const hb = new THREE.Mesh(new THREE.BoxGeometry(0.026, 0.018, innerW), doorFrameMat);
+      hb.position.set(px - 0.004, hy, rDoorZ + dz);
       add(hb);
     }
-    for (const k of [-1, 1]) {
-      const vb = new THREE.Mesh(new THREE.BoxGeometry(0.028, rDoorH - 0.16, 0.02), doorFrameMat);
-      vb.position.set(px - 0.005, rDoorH / 2, rDoorZ + dz + (k * (rLeaf - 0.10)) / 3);
+    for (let k = 1; k < 5; k++) {
+      const vb = new THREE.Mesh(new THREE.BoxGeometry(0.024, innerH, 0.018), doorFrameMat);
+      vb.position.set(px - 0.004, 0.045 + innerH / 2, rDoorZ + dz + innerW * (k / 5 - 0.5));
       add(vb);
     }
-    /* 引手：日式的做法是一个浅浅的指孔槽 + 一条细铜条，
-       不是凸出来的把手。槽比纸面凹 0.012，铜条嵌在槽底。 */
-    const gz = dz < 0 ? 0.44 : -0.44;
-    const groove = new THREE.Mesh(new THREE.BoxGeometry(0.016, 0.18, 0.07), aptTrimMat);
-    groove.position.set(px - 0.016, 1.06, rDoorZ + dz + gz);
+    /* 引手：指孔凹槽 + 嵌在槽底的细铜条 */
+    const gz = dz < 0 ? 0.46 : -0.46;
+    const groove = new THREE.Mesh(new THREE.BoxGeometry(0.014, 0.19, 0.075), aptTrimMat);
+    groove.position.set(px - 0.015, 1.04, rDoorZ + dz + gz);
     add(groove);
-    const brass = new THREE.Mesh(new THREE.BoxGeometry(0.006, 0.012, 0.062), aptBrassMat);
-    brass.position.set(px - 0.021, 1.06, rDoorZ + dz + gz);
+    const brass = new THREE.Mesh(new THREE.BoxGeometry(0.005, 0.011, 0.066), aptBrassMat);
+    brass.position.set(px - 0.020, 1.04, rDoorZ + dz + gz);
     add(brass);
   }
 
@@ -60542,9 +60566,13 @@ if (location.search.includes('selftest')) {
   step('sunThroughWindow', () => {
     const sc = sun.shadow.camera;
     const camOK = sc.far >= 40 && sc.right >= 10 && sun.shadow.mapSize.x >= 2048;
+    /* 侧墙 = 贴在 ±halfW 上、宽度等于房间进深的那两块单面墙。
+       只按位置判断会把门洞暗板（也在 x≈5.6，但宽 2.62）算成侧墙。 */
     const wallsCast = scene.children.filter((o) => o.isMesh
       && o.geometry && o.geometry.type === 'PlaneGeometry'
-      && Math.abs(Math.abs(o.position.x) - APT.halfW) < 0.01).every((o) => o.castShadow);
+      && Math.abs(Math.abs(o.position.x) - APT.halfW) < 0.01
+      && Math.abs(o.geometry.parameters.width - (APT.frontZ - APT.backZ)) < 0.01)
+      .every((o) => o.castShadow);
     const samples = [8, 12.4, 17, 22];
     let allOutside = true;
     for (const h of samples) {
