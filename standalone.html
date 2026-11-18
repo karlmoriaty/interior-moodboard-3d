@@ -57557,25 +57557,24 @@ scene.add(aptArt);
   back3Art.position.set(-3.35, 1.86, BZ - 0.075);
   add(back3Art);
 
-  /* ---- 左墙第二幅画（v6.2 从后墙挪过来）----
-     设计师要求移到"视角向前看时左方那幅画的左边"。
-     默认视角朝窗前看时屏幕左方向 ≈ 世界 +z，但实测左墙可见边界只到 z≈-0.1：
-     竖挂轴（z=-1.6）已在画面最左缘，再往 +z 就直接出画。
-     实测左墙可见区只到 z≈-0.1，竖挂轴右缘 z=-1.15，中间只有约 1.05 m。
-     所以画心取 0.91×0.55（与竖挂轴同宽，比例 1.654 与 1105/679 吻合），
-     中心 z=-0.75、y=1.62：两幅同宽、一竖一横、留 8 px 间距，读成一个组合。
-     左墙法线朝 +x，rotation.y = +π/2。 */
+  /* ---- 左墙第二幅画（v6.4 修正重叠）----
+     v6.2 算错了方向：屏幕左对应 z 增大，竖挂轴的屏幕左缘是 z=-1.145，
+     而车站画右端到了 z=-1.205（更小的 z），实际压进了竖挂轴的范围，截图里
+     能看到它盖住竖挂轴左下角。
+     正确约束：整个画必须在 z > -1.145 一侧，且 z 不能超过可见边界 -0.085。
+     → 画心 1.00×0.605（比例 1.653，与 1105/679 吻合），z 范围 -1.085..-0.085。
+     y 抬到 1.85 与竖挂轴中心对齐，两幅读成一组"主画 + 配画"。 */
   const left2Tex = makeWallArt(ART_BACK2_URL, 1105, 679);
   const left2Mat = wallArtMaterial(left2Tex);
   aptGlowMats.push(left2Mat);
   /* 木框：x 是厚度、z 是宽度（贴左墙时宽高轴换了） */
-  const left2Frame = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.64, 1.00), aptWoodMat);
-  left2Frame.position.set(-APT.halfW + 0.05, 1.62, -0.75);
+  const left2Frame = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.69, 1.09), aptWoodMat);
+  left2Frame.position.set(-APT.halfW + 0.05, 1.85, -0.585);
   left2Frame.castShadow = true;
   add(left2Frame);
-  const left2Art = new THREE.Mesh(new THREE.PlaneGeometry(0.91, 0.55), left2Mat);
+  const left2Art = new THREE.Mesh(new THREE.PlaneGeometry(1.00, 0.605), left2Mat);
   left2Art.rotation.y = Math.PI / 2;
-  left2Art.position.set(-APT.halfW + 0.082, 1.62, -0.75);
+  left2Art.position.set(-APT.halfW + 0.082, 1.85, -0.585);
   add(left2Art);
 
   /* ---- 右墙：竖向木格栅 + 横幅小画 + 落地立灯 ---- */
@@ -60563,7 +60562,7 @@ if (location.search.includes('selftest')) {
       ["left",   0.91, 1.95, 487,  487 / 1045],
       ["right",  1.95, 1.10, 1647, 1647 / 928],
       ["back",   0.77, 1.74, 462,  462 / 1048],
-      ["back2",  0.91, 0.55, 1105, 1105 / 679],
+      ["back2",  1.00, 0.605, 1105, 1105 / 679],
       ["back3",  2.00, 1.21, 1102, 1102 / 667],
     ];
     const found = {};
