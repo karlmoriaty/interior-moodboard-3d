@@ -273,7 +273,10 @@ body::after{
 .tabs .rule{width:1px;height:16px;background:var(--line);margin:0 var(--s2)}
 .cards{
   display:grid;grid-template-columns:repeat(auto-fit,76px);gap:var(--s3) 10px;
-  padding:var(--s4);max-height:186px;overflow-y:auto;
+  /* 352px 放下三行完整卡片（每行 60 图 + 名称 + 尺寸 ≈ 94，加间距与内边距）：
+     家具 20 件三行排满不用滚；结构 8 / 装饰 10 只有一两行时，面板会按内容自动收紧。
+     原来 186px 只够一行半，装饰/结构这类 8–10 件的分组会出现半张卡被裁。 */
+  padding:var(--s4);max-height:352px;overflow-y:auto;
   justify-content:center;justify-items:start;scrollbar-width:thin;
 }
 .cards::-webkit-scrollbar{width:5px}
@@ -594,6 +597,8 @@ kbd,code{
     <button data-t="paint" role="tab" aria-selected="false">涂料</button>
     <span class="rule"></span>
     <button data-t="furniture" role="tab" aria-selected="false">家具</button>
+    <button data-t="structure" role="tab" aria-selected="false">结构</button>
+    <button data-t="decor" role="tab" aria-selected="false">装饰</button>
   </div>
   <div class="cards" id="cards"></div>
 </section>
@@ -58543,11 +58548,381 @@ function makePendant() {
   return g;
 }
 
+/* ============================== 5.6 结构构件 ============================== */
+/* 可自由摆放的墙体、窗、门、柱、地台、栏杆。
+   全部按模型台内部坐标（1 单位 = 1 米），高不超过 2.6 m（层高 3 m）。
+   墙板标了 surface: 'wallBack'，贴上去的材料会跟着主题走，不是死色块。 */
+
+const glassMat = new THREE.MeshStandardMaterial({
+  color: 0xbcd6ee, roughness: 0.08, metalness: 0.1,
+  transparent: true, opacity: 0.24, side: THREE.DoubleSide, depthWrite: false,
+});
+
+function makeWallPanel() {
+  const g = pieceGroup('wallPanel', 1.8, 0.16, 2.35);
+  addBox(g, 1.8, 2.35, 0.14, 0, 1.175, 0, surfaceMat.wallBack, 'wallBack');
+  /* 踢脚与顶部压条：光板会读成一块纸，加两道横线才有厚度 */
+  addBox(g, 1.8, 0.07, 0.17, 0, 0.035, 0, surfaceMat.woodwork, 'woodwork');
+  addBox(g, 1.8, 0.04, 0.17, 0, 2.33, 0, surfaceMat.woodwork, 'woodwork');
+  return g;
+}
+
+function makeWallShort() {
+  const g = pieceGroup('wallShort', 1.6, 0.16, 1.05);
+  addBox(g, 1.6, 1.05, 0.14, 0, 0.525, 0, surfaceMat.wallBack, 'wallBack');
+  addBox(g, 1.64, 0.05, 0.19, 0, 1.075, 0, surfaceMat.woodwork, 'woodwork');
+  addBox(g, 1.6, 0.06, 0.17, 0, 0.03, 0, surfaceMat.woodwork, 'woodwork');
+  return g;
+}
+
+function makeColumn() {
+  const g = pieceGroup('column', 0.26, 0.26, 2.6);
+  addBox(g, 0.26, 0.08, 0.26, 0, 0.04, 0, surfaceMat.woodwork, 'woodwork');
+  addBox(g, 0.18, 2.44, 0.18, 0, 1.3, 0, surfaceMat.woodwork, 'woodwork');
+  addBox(g, 0.26, 0.08, 0.26, 0, 2.56, 0, surfaceMat.woodwork, 'woodwork');
+  return g;
+}
+
+function makeWindowUnit() {
+  const g = pieceGroup('windowUnit', 1.62, 0.18, 2.3);
+  const frame = surfaceMat.woodwork;
+  /* 四面外框 */
+  addBox(g, 1.62, 0.08, 0.18, 0, 2.26, 0, frame, 'woodwork');
+  addBox(g, 1.62, 0.10, 0.20, 0, 0.05, 0, frame, 'woodwork');
+  addBox(g, 0.08, 2.3, 0.18, -0.77, 1.15, 0, frame, 'woodwork');
+  addBox(g, 0.08, 2.3, 0.18, 0.77, 1.15, 0, frame, 'woodwork');
+  /* 玻璃：半透，放在框中间 */
+  const pane = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 2.1), glassMat);
+  pane.position.set(0, 1.17, 0);
+  pane.renderOrder = 1;
+  g.add(pane);
+  /* 竖梃与横档：没有分格会读成一块塑料膜 */
+  addBox(g, 0.045, 2.1, 0.06, -0.25, 1.17, 0, frame, 'woodwork');
+  addBox(g, 0.045, 2.1, 0.06, 0.25, 1.17, 0, frame, 'woodwork');
+  addBox(g, 1.5, 0.045, 0.06, 0, 1.62, 0, frame, 'woodwork');
+  /* 窗台 */
+  addBox(g, 1.72, 0.045, 0.26, 0, 0.09, 0.03, frame, 'woodwork');
+  return g;
+}
+
+function makeDoorUnit() {
+  const g = pieceGroup('doorUnit', 1.18, 0.18, 2.2);
+  const frame = surfaceMat.woodwork;
+  addBox(g, 1.18, 0.08, 0.18, 0, 2.16, 0, frame, 'woodwork');
+  addBox(g, 0.08, 2.2, 0.18, -0.55, 1.1, 0, frame, 'woodwork');
+  addBox(g, 0.08, 2.2, 0.18, 0.55, 1.1, 0, frame, 'woodwork');
+  /* 门扇：比框薄一点，留出缝才像能开 */
+  addBox(g, 1.0, 2.06, 0.06, 0, 1.06, 0, surfaceMat.woodwork, 'woodwork');
+  addBox(g, 0.62, 1.5, 0.02, 0, 1.15, 0.04, surfaceMat.woodwork, 'woodwork');
+  /* 把手 */
+  const knob = new THREE.Mesh(new THREE.SphereGeometry(0.028, 12, 10), legMat);
+  knob.position.set(0.38, 1.02, 0.07);
+  knob.castShadow = true;
+  g.add(knob);
+  return g;
+}
+
+function makeOpening() {
+  const g = pieceGroup('opening', 1.3, 0.2, 2.2);
+  const frame = surfaceMat.woodwork;
+  addBox(g, 1.3, 0.12, 0.2, 0, 2.14, 0, frame, 'woodwork');
+  addBox(g, 0.12, 2.2, 0.2, -0.59, 1.1, 0, frame, 'woodwork');
+  addBox(g, 0.12, 2.2, 0.2, 0.59, 1.1, 0, frame, 'woodwork');
+  return g;
+}
+
+function makePlatform() {
+  const g = pieceGroup('platform', 1.8, 1.1, 0.26);
+  /* 两级：做成地台 / 上床踏步都能用 */
+  addBox(g, 1.8, 0.13, 1.1, 0, 0.065, 0, surfaceMat.woodwork, 'woodwork');
+  addBox(g, 1.44, 0.13, 0.72, 0, 0.195, -0.14, surfaceMat.woodwork, 'woodwork');
+  addBox(g, 1.8, 0.02, 1.1, 0, 0.14, 0, surfaceMat.woodwork, 'woodwork');
+  return g;
+}
+
+function makeRailing() {
+  const g = pieceGroup('railing', 1.6, 0.1, 0.95);
+  const mat = surfaceMat.woodwork;
+  addBox(g, 1.6, 0.05, 0.09, 0, 0.93, 0, mat, 'woodwork');
+  addBox(g, 1.6, 0.04, 0.06, 0, 0.42, 0, mat, 'woodwork');
+  for (const sx of [-0.74, -0.37, 0, 0.37, 0.74]) {
+    addBox(g, 0.04, 0.9, 0.04, sx, 0.45, 0, mat, 'woodwork');
+  }
+  return g;
+}
+
+/* ============================== 5.7 装饰 ============================== */
+
+/* 抽象画：几块低饱和色形，纸白底。做成落地画框，可立在墙边。 */
+const artCanvasTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = 320; c.height = 420;
+  const g = c.getContext('2d');
+  g.fillStyle = '#efe8dc'; g.fillRect(0, 0, 320, 420);
+  g.fillStyle = 'rgba(154,95,67,0.72)';
+  g.beginPath(); g.arc(112, 168, 74, 0, Math.PI * 2); g.fill();
+  g.fillStyle = 'rgba(60,72,80,0.55)';
+  g.fillRect(176, 118, 96, 150);
+  g.fillStyle = 'rgba(105,115,95,0.5)';
+  g.beginPath(); g.moveTo(0, 372); g.quadraticCurveTo(150, 300, 320, 366);
+  g.lineTo(320, 420); g.lineTo(0, 420); g.fill();
+  g.fillStyle = 'rgba(30,28,26,0.18)'; g.fillRect(0, 0, 320, 8);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace;
+  return t;
+})();
+const artCanvasMat = new THREE.MeshStandardMaterial({ map: artCanvasTex, roughness: 0.9 });
+
+function makePainting() {
+  const g = pieceGroup('painting', 0.58, 0.42, 1.22);
+  const frame = surfaceMat.woodwork;
+  addBox(g, 0.58, 1.18, 0.05, 0, 0.66, 0, frame, 'woodwork');
+  const art = new THREE.Mesh(new THREE.PlaneGeometry(0.48, 1.02), artCanvasMat);
+  art.position.set(0, 0.68, 0.028);
+  g.add(art);
+  /* 后斜撑：画面立起来才不会像一块悬空的板 */
+  const leg = addBox(g, 0.05, 1.06, 0.03, 0, 0.56, -0.14, frame, 'woodwork');
+  leg.rotation.x = 0.16;
+  addBox(g, 0.44, 0.04, 0.3, 0, 0.02, -0.02, frame, 'woodwork');
+  return g;
+}
+
+function makeBookStack() {
+  const g = pieceGroup('bookStack', 0.4, 0.3, 0.26);
+  const mats = [bookRust, bookInk, paperMat, accentMat, bookInk];
+  const sizes = [[0.34, 0.05, 0.26], [0.31, 0.045, 0.24], [0.33, 0.055, 0.23], [0.28, 0.04, 0.22], [0.3, 0.05, 0.2]];
+  let y = 0;
+  for (let i = 0; i < 5; i++) {
+    const [w, h, d] = sizes[i];
+    const b = addBox(g, w, h, d, (i % 2 ? 0.02 : -0.015) * i, y + h / 2, (i % 2 ? -0.01 : 0.015) * i, mats[i]);
+    b.rotation.y = (i % 3 - 1) * 0.07;
+    y += h;
+  }
+  return g;
+}
+
+function makeBookRow() {
+  const g = pieceGroup('bookRow', 0.52, 0.24, 0.28);
+  const mats = [bookInk, bookRust, paperMat, accentMat];
+  let x = -0.2;
+  for (let i = 0; i < 7; i++) {
+    const bh = 0.2 + ((i * 7) % 5) * 0.016;
+    addBox(g, 0.035 + (i % 2) * 0.008, bh, 0.2, x, bh / 2, 0, mats[i % 4]);
+    x += 0.052;
+  }
+  /* 两端书立 */
+  for (const sx of [-0.245, 0.245]) {
+    addBox(g, 0.012, 0.24, 0.22, sx, 0.12, 0, surfaceMat.woodwork, 'woodwork');
+  }
+  return g;
+}
+
+function makePotSmall() {
+  const g = pieceGroup('potSmall', 0.3, 0.3, 0.58);
+  addCyl(g, 0.13, 0.1, 0.24, 0, 0.12, 0, ceramicMat, 18);
+  addCyl(g, 0.12, 0.11, 0.03, 0, 0.25, 0, new THREE.MeshStandardMaterial({ color: 0x4a4136, roughness: 1 }), 18);
+  const leaf = new THREE.IcosahedronGeometry(0.1, 1);
+  for (const [x, y, z, sc] of [[0, 0.34, 0, 1], [-0.09, 0.42, 0.05, 0.75], [0.08, 0.46, -0.04, 0.66]]) {
+    const m = new THREE.Mesh(leaf, leavesMat);
+    m.position.set(x, y, z);
+    m.scale.setScalar(sc);
+    m.castShadow = true;
+    g.add(m);
+  }
+  return g;
+}
+
+function makePlantTall() {
+  const g = pieceGroup('plantTall', 0.5, 0.5, 1.78);
+  addCyl(g, 0.16, 0.12, 0.3, 0, 0.15, 0, new THREE.MeshStandardMaterial({ color: 0x6f6558, roughness: 0.92 }), 16);
+  addCyl(g, 0.018, 0.026, 1.3, 0, 0.93, 0, legMat, 8);
+  const leaf = new THREE.IcosahedronGeometry(0.2, 1);
+  for (const [x, y, z, sc] of [[0, 1.5, 0, 1], [-0.13, 1.32, 0.06, 0.8], [0.14, 1.38, -0.05, 0.75], [0.04, 1.66, 0.03, 0.6]]) {
+    const m = new THREE.Mesh(leaf, leavesMat);
+    m.position.set(x, y, z);
+    m.scale.setScalar(sc);
+    m.castShadow = true;
+    g.add(m);
+  }
+  return g;
+}
+
+function makeVase() {
+  const g = pieceGroup('vase', 0.26, 0.26, 0.62);
+  addCyl(g, 0.09, 0.06, 0.16, 0, 0.08, 0, ceramicMat, 20);
+  addCyl(g, 0.055, 0.09, 0.22, 0, 0.27, 0, ceramicMat, 20);
+  addCyl(g, 0.045, 0.055, 0.06, 0, 0.41, 0, ceramicMat, 20);
+  /* 三根干枝：空瓶太素 */
+  for (const [rot, tilt, len] of [[0.3, 0.12, 0.3], [-0.5, -0.16, 0.26], [1.9, 0.08, 0.22]]) {
+    const br = addCyl(g, 0.006, 0.004, len, 0, 0.44 + len / 2, 0, legMat, 6);
+    br.rotation.y = rot;
+    br.rotation.z = tilt;
+  }
+  return g;
+}
+
+function makeRugSmall() {
+  const g = pieceGroup('rugSmall', 1.7, 1.15, 0.02);
+  addBox(g, 1.7, 0.012, 1.15, 0, 0.006, 0, surfaceMat.rug, 'rug');
+  /* 包边：一块纯色板会像贴纸 */
+  for (const [w, d, x, z] of [[1.7, 0.06, 0, -0.545], [1.7, 0.06, 0, 0.545], [0.06, 1.15, -0.82, 0], [0.06, 1.15, 0.82, 0]]) {
+    addBox(g, w, 0.016, d, x, 0.008, z, surfaceMat.woodwork, 'woodwork');
+  }
+  return g;
+}
+
+function makeMirror() {
+  const g = pieceGroup('mirror', 0.66, 0.14, 1.72);
+  addBox(g, 0.66, 1.7, 0.08, 0, 0.85, 0, surfaceMat.woodwork, 'woodwork');
+  const glass = new THREE.Mesh(
+    new THREE.PlaneGeometry(0.56, 1.56),
+    new THREE.MeshStandardMaterial({ color: 0xdfe7ee, roughness: 0.04, metalness: 1, envMapIntensity: 1.6 }),
+  );
+  glass.position.set(0, 0.87, 0.045);
+  g.add(glass);
+  addBox(g, 0.5, 0.05, 0.3, 0, 0.025, 0.02, surfaceMat.woodwork, 'woodwork');
+  return g;
+}
+
+function makeSculpture() {
+  const g = pieceGroup('sculpture', 0.36, 0.36, 0.88);
+  addBox(g, 0.3, 0.1, 0.3, 0, 0.05, 0, surfaceMat.woodwork, 'woodwork');
+  addCyl(g, 0.05, 0.07, 0.2, 0, 0.2, 0, legMat, 12);
+  const knot = new THREE.Mesh(new THREE.TorusKnotGeometry(0.15, 0.045, 80, 12), ceramicMat);
+  knot.position.set(0, 0.56, 0);
+  knot.castShadow = true;
+  g.add(knot);
+  return g;
+}
+
+function makeCandle() {
+  const g = pieceGroup('candle', 0.26, 0.26, 0.52);
+  const wax = new THREE.MeshStandardMaterial({ color: 0xe8dfcd, roughness: 0.8 });
+  const flameMat = new THREE.MeshBasicMaterial({ color: 0xffc879, toneMapped: false });
+  for (const [x, z, h] of [[-0.07, 0.02, 0.34], [0.05, -0.05, 0.26], [0.02, 0.08, 0.18]]) {
+    addCyl(g, 0.04, 0.04, h, x, h / 2, z, wax, 14);
+    const fl = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), flameMat);
+    fl.position.set(x, h + 0.02, z);
+    fl.scale.y = 1.7;
+    g.add(fl);
+  }
+  addCyl(g, 0.13, 0.13, 0.015, 0, 0.008, 0, legMat, 20);
+  return g;
+}
+
+/* ============================== 5.8 家具补充 ============================== */
+
+function makeBed() {
+  const g = pieceGroup('bed', 2.02, 1.52, 0.62);
+  const wood = surfaceMat.woodwork;
+  addBox(g, 2.02, 0.16, 1.52, 0, 0.3, 0, wood, 'woodwork');
+  for (const [x, z] of [[-0.92, -0.66], [0.92, -0.66], [-0.92, 0.66], [0.92, 0.66]]) {
+    addBox(g, 0.07, 0.22, 0.07, x, 0.11, z, wood, 'woodwork');
+  }
+  addBox(g, 1.92, 0.16, 1.42, 0, 0.46, 0, surfaceMat.sofa, 'sofa');   // 床垫
+  addBox(g, 2.02, 0.5, 0.09, 0, 0.55, -0.72, wood, 'woodwork');      // 床头板
+  /* 枕头两只 + 被子一角 */
+  for (const x of [-0.45, 0.45]) {
+    addBox(g, 0.5, 0.12, 0.3, x, 0.6, -0.48, paperMat);
+  }
+  addBox(g, 1.9, 0.1, 0.72, 0, 0.59, 0.32, throwMat);
+  return g;
+}
+
+function makeWardrobe() {
+  const g = pieceGroup('wardrobe', 1.2, 0.58, 2.08);
+  const wood = surfaceMat.woodwork;
+  addBox(g, 1.2, 2.0, 0.56, 0, 1.02, 0, wood, 'woodwork');
+  addBox(g, 1.24, 0.03, 0.6, 0, 2.04, 0, wood, 'woodwork');
+  /* 双开门缝 */
+  for (const x of [-0.02, 0.02]) {
+    addBox(g, 0.012, 1.96, 0.012, x, 1.02, 0.284, legMat);
+  }
+  for (const x of [-0.12, 0.12]) {
+    addCyl(g, 0.012, 0.012, 0.16, x, 1.02, 0.3, legMat, 8);
+  }
+  addBox(g, 1.2, 0.06, 0.56, 0, 0.03, 0, legMat);
+  return g;
+}
+
+function makeDesk() {
+  const g = pieceGroup('desk', 1.34, 0.6, 0.76);
+  const wood = surfaceMat.woodwork;
+  addBox(g, 1.34, 0.045, 0.6, 0, 0.74, 0, wood, 'woodwork');
+  for (const x of [-0.62, 0.62]) {
+    addBox(g, 0.05, 0.72, 0.05, x, 0.36, -0.26, legMat);
+    addBox(g, 0.05, 0.72, 0.05, x, 0.36, 0.26, legMat);
+  }
+  /* 一侧抽屉柜 */
+  addBox(g, 0.34, 0.42, 0.54, 0.44, 0.5, 0, wood, 'woodwork');
+  for (const y of [0.38, 0.62]) addBox(g, 0.28, 0.02, 0.02, 0.44, y, 0.28, legMat);
+  /* 桌上两本书与一盏小灯，空桌面看不出是书桌 */
+  addBox(g, 0.22, 0.03, 0.16, -0.2, 0.78, 0.02, bookInk);
+  addBox(g, 0.2, 0.025, 0.15, -0.2, 0.81, 0.03, bookRust);
+  addCyl(g, 0.05, 0.07, 0.16, -0.52, 0.84, -0.18, legMat, 12);
+  addCyl(g, 0.09, 0.07, 0.1, -0.52, 0.94, -0.18, shadeMat, 16);
+  return g;
+}
+
+function makeDrawer() {
+  const g = pieceGroup('drawer', 0.92, 0.46, 0.88);
+  const wood = surfaceMat.woodwork;
+  addBox(g, 0.92, 0.82, 0.44, 0, 0.45, 0, wood, 'woodwork');
+  for (let i = 0; i < 3; i++) {
+    const y = 0.2 + i * 0.26;
+    addBox(g, 0.84, 0.22, 0.02, 0, y, 0.222, wood, 'woodwork');
+    addCyl(g, 0.012, 0.012, 0.14, 0, y, 0.24, legMat, 8);
+  }
+  for (const [x, z] of [[-0.4, -0.16], [0.4, -0.16], [-0.4, 0.16], [0.4, 0.16]]) {
+    addBox(g, 0.05, 0.08, 0.05, x, 0.04, z, legMat);
+  }
+  return g;
+}
+
+function makeTvStand() {
+  const g = pieceGroup('tvStand', 1.5, 0.42, 0.48);
+  const wood = surfaceMat.woodwork;
+  addBox(g, 1.5, 0.34, 0.42, 0, 0.28, 0, wood, 'woodwork');
+  addBox(g, 1.52, 0.02, 0.44, 0, 0.46, 0, wood, 'woodwork');
+  for (const x of [-0.36, 0.36]) addBox(g, 0.012, 0.3, 0.012, x, 0.28, 0.214, legMat);
+  for (const [x, z] of [[-0.68, -0.14], [0.68, -0.14], [-0.68, 0.14], [0.68, 0.14]]) {
+    addBox(g, 0.045, 0.11, 0.045, x, 0.055, z, legMat);
+  }
+  return g;
+}
+
+function makeLoveseat() {
+  const g = pieceGroup('loveseat', 1.62, 0.92, 0.82);
+  const mat = surfaceMat.sofa;
+  addBox(g, 1.5, 0.24, 0.82, 0, 0.36, 0, mat, 'sofa');
+  addBox(g, 1.62, 0.46, 0.16, 0, 0.62, -0.33, mat, 'sofa');
+  for (const x of [-0.72, 0.72]) addBox(g, 0.14, 0.34, 0.82, x, 0.5, 0, mat, 'sofa');
+  /* 坐垫两块 + 靠枕 */
+  addBox(g, 0.66, 0.12, 0.66, -0.34, 0.51, 0.04, throwMat);
+  addBox(g, 0.66, 0.12, 0.66, 0.34, 0.51, 0.04, throwMat);
+  addBox(g, 0.34, 0.24, 0.1, -0.34, 0.7, -0.22, throwMat);
+  for (const [x, z] of [[-0.66, -0.32], [0.66, -0.32], [-0.66, 0.32], [0.66, 0.32]]) {
+    addBox(g, 0.05, 0.16, 0.05, x, 0.16, z, legMat);
+  }
+  return g;
+}
+
 const BUILD = {
   sofa: makeSofa, armchair: makeArmchair, coffeeTable: makeCoffeeTable, sideTable: makeSideTable,
   diningTable: makeDiningTable, chair: makeChair, shelf: makeShelf, lamp: makeLamp, plant: makePlant,
   pendant: makePendant, sideboard: makeSideboard, roundTable: makeRoundTable, bench: makeBench,
   stool: makeStool,
+  /* v6.0：结构构件 */
+  wallPanel: makeWallPanel, wallShort: makeWallShort, column: makeColumn,
+  windowUnit: makeWindowUnit, doorUnit: makeDoorUnit, opening: makeOpening,
+  platform: makePlatform, railing: makeRailing,
+  /* v6.0：装饰 */
+  painting: makePainting, bookStack: makeBookStack, bookRow: makeBookRow,
+  potSmall: makePotSmall, plantTall: makePlantTall, vase: makeVase,
+  rugSmall: makeRugSmall, mirror: makeMirror, sculpture: makeSculpture, candle: makeCandle,
+  /* v6.0：家具补充 */
+  bed: makeBed, wardrobe: makeWardrobe, desk: makeDesk, drawer: makeDrawer,
+  tvStand: makeTvStand, loveseat: makeLoveseat,
 };
 
 function placePiece(type, x, z, rot) {
@@ -59079,20 +59454,60 @@ function selectSurface(k) {
 /* ============================== 10. 样本抽屉 ============================== */
 const FURNITURE = [
   { id: 'sofa', name: '沙发', sub: '2.35 m' },
+  { id: 'loveseat', name: '双人沙发', sub: '1.62 m' },
   { id: 'armchair', name: '单椅', sub: '0.92 m' },
   { id: 'bench', name: '长凳', sub: '1.40 m' },
   { id: 'coffeeTable', name: '茶几', sub: '1.32 m' },
   { id: 'sideTable', name: '边几', sub: '0.44 m' },
   { id: 'roundTable', name: '圆几', sub: '0.62 m' },
   { id: 'diningTable', name: '餐桌', sub: '1.70 m' },
+  { id: 'desk', name: '书桌', sub: '1.34 m' },
   { id: 'chair', name: '餐椅', sub: '0.46 m' },
   { id: 'stool', name: '矮凳', sub: '0.36 m' },
+  { id: 'bed', name: '床', sub: '2.02 m' },
   { id: 'sideboard', name: '边柜', sub: '1.40 m' },
+  { id: 'tvStand', name: '矮柜', sub: '1.50 m' },
+  { id: 'drawer', name: '斗柜', sub: '0.92 m' },
+  { id: 'wardrobe', name: '衣柜', sub: '1.20 m' },
   { id: 'shelf', name: '书架', sub: '0.94 m' },
   { id: 'lamp', name: '落地灯', sub: '1.60 m' },
   { id: 'pendant', name: '吊灯', sub: '吊装' },
   { id: 'plant', name: '绿植', sub: '1.20 m' },
 ];
+
+/* 结构构件：可自由摆放的墙、窗、门、柱、地台、栏杆。
+   拼起来就能自己隔出一个房间，不用改动房子本身。 */
+const STRUCTURE = [
+  { id: 'wallPanel', name: '隔断墙', sub: '1.80×2.35' },
+  { id: 'wallShort', name: '半高墙', sub: '1.60×1.05' },
+  { id: 'column', name: '立柱', sub: 'h 2.60' },
+  { id: 'windowUnit', name: '窗', sub: '1.62 m' },
+  { id: 'doorUnit', name: '门', sub: '1.18 m' },
+  { id: 'opening', name: '门洞', sub: '1.30 m' },
+  { id: 'platform', name: '地台', sub: '1.80×1.10' },
+  { id: 'railing', name: '栏杆', sub: '1.60 m' },
+];
+
+/* 装饰物件：画、书、花器、镜、雕塑、烛台、小地毯 */
+const DECOR = [
+  { id: 'painting', name: '装饰画', sub: '落地' },
+  { id: 'mirror', name: '落地镜', sub: '1.72 m' },
+  { id: 'bookStack', name: '书堆', sub: '5 本' },
+  { id: 'bookRow', name: '一排书', sub: '7 本' },
+  { id: 'plantTall', name: '高绿植', sub: '1.78 m' },
+  { id: 'potSmall', name: '小盆栽', sub: '0.58 m' },
+  { id: 'vase', name: '花器', sub: '0.62 m' },
+  { id: 'sculpture', name: '摆件', sub: '0.88 m' },
+  { id: 'candle', name: '烛台', sub: '0.52 m' },
+  { id: 'rugSmall', name: '小地毯', sub: '1.70×1.15' },
+];
+
+/* 三组共用一套卡片 / 拖放逻辑，只有清单不同 */
+const PIECE_GROUPS = { furniture: FURNITURE, structure: STRUCTURE, decor: DECOR };
+const isPieceTab = (t) => t === 'furniture' || t === 'structure' || t === 'decor';
+const pieceById = (id) => FURNITURE.find((x) => x.id === id)
+  || STRUCTURE.find((x) => x.id === id)
+  || DECOR.find((x) => x.id === id);
 
 let tab = 'wood';
 const cardsHost = $('#cards');
@@ -59125,7 +59540,7 @@ function buildThumbs() {
 
   const cam = new THREE.PerspectiveCamera(26, 1, 0.05, 80);
   THUMBS = {};
-  for (const f of FURNITURE) {
+  for (const f of [...FURNITURE, ...STRUCTURE, ...DECOR]) {
     const g = BUILD[f.id]();
     sc.add(g);
     const bb = new THREE.Box3().setFromObject(g);
@@ -59147,28 +59562,28 @@ function buildThumbs() {
 }
 
 function refreshCards() {
-  const isFurn = tab === 'furniture';
-  const list = isFurn ? FURNITURE : LIB[tab];
+  const isPiece = isPieceTab(tab);
+  const list = isPiece ? PIECE_GROUPS[tab] : LIB[tab];
   if (cardsHost.dataset.tab !== tab) {
     cardsHost.dataset.tab = tab;
     cardsHost.innerHTML = '';
-    const thumbs = isFurn ? buildThumbs() : null;
+    const thumbs = isPiece ? buildThumbs() : null;
     for (const item of list) {
       const b = document.createElement('button');
       b.className = 'card';
       b.dataset.id = item.id;
-      if (isFurn) {
+      if (isPiece) {
         const src = thumbs[item.id];
         const bg = src ? `background-image:url(${src})` : 'background:rgba(0,0,0,.04)';
         b.innerHTML = `<span class="sw ph" style="${bg}"></span><small>${item.name}</small><span class="tag">${item.sub}</span>`;
       } else {
         b.innerHTML = `<span class="sw" style="background-image:url(${swatchFor(byId(tab, item.id))})"></span><small>${item.name}</small>`;
       }
-      b.addEventListener('pointerdown', (e) => startCardDrag(e, b, isFurn ? 'furniture' : tab, item.id));
+      b.addEventListener('pointerdown', (e) => startCardDrag(e, b, tab, item.id));
       cardsHost.appendChild(b);
     }
   }
-  if (isFurn) return;
+  if (isPiece) return;
   for (const b of cardsHost.children) {
     const used = SURFACE_KEYS.some((k) => state.mats[k][0] === tab && state.mats[k][1] === b.dataset.id);
     b.classList.toggle('used', used);
@@ -59370,7 +59785,7 @@ function startCardDrag(e, el, cat, id) {
   cardDrag.active = true;
   cardDrag.cat = cat;
   cardDrag.id = id;
-  cardDrag.kind = cat === 'furniture' ? 'furn' : 'mat';
+  cardDrag.kind = isPieceTab(cat) ? 'furn' : 'mat';
   cardDrag.moved = false;
   cardDrag.x = e.clientX;
   cardDrag.y = e.clientY;
@@ -59409,7 +59824,7 @@ function onCardUp(e) {
       if (selectedSurface) applyToSurface(selectedSurface, cardDrag.cat, cardDrag.id);
       else toast('先点一个面，或把样本拖进去');
     } else {
-      toast('把家具拖进屋子里放下');
+      toast('把物件拖进屋子里放下');
     }
     return;
   }
@@ -59429,8 +59844,8 @@ function onCardUp(e) {
     const g = placeAt(cardDrag.id, p.x, p.z, 0);
     if (!g) return;
     syncPieces();
-    const f = FURNITURE.find((x) => x.id === cardDrag.id);
-    toast(`放了一张${f ? f.name : '家具'}`);
+    const f = pieceById(cardDrag.id);
+    toast(`放了一件${f ? f.name : '家具'}`);
   }
 }
 
@@ -60054,6 +60469,42 @@ if (location.search.includes('selftest')) {
   /* 四幅画：模型房间月夜实拍（上一版已确认，不动）+ 三面墙的新图。
      图片异步加载，src 写错会留空画布，所以逐个查贴图画布尺寸；
      再核对画框宽高比与图片一致，防止拉伸变形。 */
+  /* 物件目录：三组清单与 BUILD 表必须一一对应。
+     少一个生成器 → 拖进屋里放不出来；少一个清单项 → 有生成器却选不到。
+     逐个真跑生成器，校验 group 带 piece 数据且尺寸为正。 */
+  step('pieceCatalog', () => {
+    const groups = { furniture: FURNITURE, structure: STRUCTURE, decor: DECOR };
+    const listed = [];
+    for (const key of Object.keys(groups)) {
+      for (const it of groups[key]) listed.push(it.id);
+    }
+    const missingBuild = listed.filter((id) => typeof BUILD[id] !== 'function');
+    /* 反向：BUILD 里有、清单里没有，同样选不到 */
+    const missingList = Object.keys(BUILD).filter((id) => !listed.includes(id));
+    const dup = listed.length !== new Set(listed).size;
+
+    /* 真跑每个生成器，检查尺寸与类型字段 */
+    const bad = [];
+    for (const id of listed) {
+      if (typeof BUILD[id] !== 'function') continue;
+      try {
+        const g = BUILD[id]();
+        const p = g && g.userData && g.userData.piece;
+        const okSize = p && p.w > 0 && p.d > 0 && p.h > 0;
+        const okType = p && p.type === id;
+        if (!okSize || !okType) bad.push(id);
+        g.traverse((o) => { if (o.geometry) o.geometry.dispose(); });
+      } catch (err) {
+        bad.push(id + ':throw');
+      }
+    }
+
+    /* 三组数量：结构 8、装饰 10，家具至少 20（含原有 14） */
+    const countOK = STRUCTURE.length === 8 && DECOR.length === 10 && FURNITURE.length >= 20;
+    const ok = !missingBuild.length && !missingList.length && !dup && !bad.length && countOK;
+    return ok ? `ok(${listed.length}件:家具${FURNITURE.length}/结构${STRUCTURE.length}/装饰${DECOR.length},生成器全通)`
+      : `FAIL(build=${missingBuild.join(',')},list=${missingList.join(',')},dup=${dup},bad=${bad.join(',')},count=${countOK})`;
+  });
   step('wallArts', () => {
     const inline = [
       [MOON_ART_URL, "image/jpeg", 50000],
@@ -60366,6 +60817,9 @@ if (location.search.includes('probe')) {
   window.__viewTex = viewTex;
   window.__orbit = orbit;
   window.__placeCamera = placeCamera;
+  window.__placeAt = (t,x,z,r) => placeAt(t,x,z,r);
+  window.__syncPieces = syncPieces;
+  window.__pieces = PIECES;
   window.__probe = (cx, cy) => {
     const ndc = new THREE.Vector2(
       (cx / window.innerWidth) * 2 - 1,
