@@ -6,6 +6,7 @@
 import * as THREE from 'three';
 import { RoomEnvironment } from './vendor/RoomEnvironment.js';
 import { CITY_PHOTO_URL } from './city-photo.js';
+import { TREE_ASSET } from './tree-mesh.js';
 
 /* ============================== 0. 小工具 ============================== */
 const $ = (s) => document.querySelector(s);
@@ -3820,30 +3821,79 @@ function makeFireplace() {
   return g;
 }
 
+/* 圣诞树（v7.3）：由 Blender 4.5 程序化生成，导出 GLB 后压成紧凑二进制。
+   约 8670 顶点 / 31700 索引，含树皮、三层针叶、红金球、96 颗串灯、五角星。
+   分两个 geometry：solid 走顶点色，glow 单独给自发光。 */
+let treeGeoCache = null;
+function treeGeometries() {
+  if (treeGeoCache) return treeGeoCache;
+  const raw = atob(TREE_ASSET.data);
+  const bytes = new Uint8Array(raw.length);
+  for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+  const dv = new DataView(bytes.buffer);
+  const sv = dv.getUint32(0, true);
+  const si = dv.getUint32(4, true);
+  const gv = dv.getUint32(8, true);
+  const gi = dv.getUint32(12, true);
+  const totalV = sv + gv;
+
+  const posBase = 16;
+  const colBase = posBase + totalV * 12;
+  const idxBase = colBase + totalV * 4;
+
+  function makeGeo(from, verts, idxFrom, idxCount) {
+    const geo = new THREE.BufferGeometry();
+    const pos = new Float32Array(verts * 3);
+    const col = new Float32Array(verts * 3);
+    for (let i = 0; i < verts * 3; i++) pos[i] = dv.getFloat32(posBase + (from * 3 + i) * 4, true);
+    for (let i = 0; i < verts; i++) {
+      col[i * 3] = dv.getUint8(colBase + (from + i) * 4) / 255;
+      col[i * 3 + 1] = dv.getUint8(colBase + (from + i) * 4 + 1) / 255;
+      col[i * 3 + 2] = dv.getUint8(colBase + (from + i) * 4 + 2) / 255;
+    }
+    const idx = new Uint16Array(idxCount);
+    for (let i = 0; i < idxCount; i++) idx[i] = dv.getUint16(idxBase + (idxFrom + i) * 2, true);
+    geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+    geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+    geo.setIndex(new THREE.BufferAttribute(idx, 1));
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  treeGeoCache = {
+    solid: makeGeo(0, sv, 0, si),
+    glow: makeGeo(sv, gv, si, gi),
+    matSolid: new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.72, metalness: 0.24, side: THREE.DoubleSide,
+      /* 细密针叶在暗环境里容易糊成黑块，给一点自发光托底 */
+      emissive: 0x0d1a0c, emissiveIntensity: 0.85,
+    }),
+    matGlow: new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.4, metalness: 0.15,
+      emissive: 0xffb35e, emissiveIntensity: 1.0, side: THREE.DoubleSide,
+    }),
+  };
+  return treeGeoCache;
+}
+
 function makeTree() {
-  const g = pieceGroup('tree', 0.92, 0.92, 1.7);
-  const needle = new THREE.MeshStandardMaterial({ color: 0x2c452f, roughness: 0.92 });
-  addCyl(g, 0.045, 0.055, 0.34, 0, 0.17, 0, legMat, 10);
-  for (const [yy, r, h] of [[0.52, 0.42, 0.52], [0.9, 0.33, 0.46], [1.24, 0.24, 0.4], [1.52, 0.14, 0.3]]) {
-    const c = new THREE.Mesh(new THREE.ConeGeometry(r, h, 14), needle);
-    c.position.set(0, yy, 0);
-    c.castShadow = true;
-    g.add(c);
-  }
-  /* 串灯：小球绕树分布，暖白 */
-  const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffd9a0, toneMapped: false });
-  for (let i = 0; i < 22; i++) {
-    const a = i * 2.399;
-    const yy = 0.42 + (i / 22) * 1.16;
-    const rr = 0.4 * (1 - i / 30) + 0.05;
-    const b = new THREE.Mesh(new THREE.SphereGeometry(0.018, 6, 5), bulbMat);
-    b.position.set(Math.cos(a) * rr, yy, Math.sin(a) * rr);
-    g.add(b);
-  }
-  const glow = new THREE.PointLight(0xffc98a, 0, 2.8 * MODEL_SCALE, 2);
-  glow.position.set(0, 1.0, 0);
+  /* 模型原始高度 1.63，房间里显得偏小；整体放大到 1.85 m */
+  const S = 1.135;
+  const g = pieceGroup('tree', 0.99 * S, 1.01 * S, 1.63 * S);
+  const T = treeGeometries();
+  const solid = new THREE.Mesh(T.solid, T.matSolid);
+  solid.castShadow = true;
+  solid.receiveShadow = true;
+  solid.scale.setScalar(S);
+  g.add(solid);
+  const glow = new THREE.Mesh(T.glow, T.matGlow);
+  glow.scale.setScalar(S);
   g.add(glow);
-  g.userData.fire = glow;
+  /* 树上的光仍然挂一个点光源，夜里会把周围照亮 */
+  const light = new THREE.PointLight(0xffc98a, 0, 2.6 * MODEL_SCALE, 2);
+  light.position.set(0, 1.0, 0);
+  g.add(light);
+  g.userData.fire = light;
   return g;
 }
 
@@ -4571,7 +4621,7 @@ const FURNITURE = [
   { id: 'plant', name: '绿植', sub: '1.20 m' },
   { id: 'cornerSofa', name: '转角沙发', sub: '2.62 m' },
   { id: 'fireplace', name: '悬挂壁炉', sub: 'h 2.60' },
-  { id: 'tree', name: '圣诞树', sub: '1.70 m' },
+  { id: 'tree', name: '圣诞树', sub: '1.85 m' },
   { id: 'piano', name: '三角钢琴', sub: '1.90 m' },
   { id: 'candleCluster', name: '烛光组', sub: '5 支' },
   { id: 'candleStand', name: '烛台', sub: 'h 1.26' },
