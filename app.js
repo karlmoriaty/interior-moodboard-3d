@@ -6099,6 +6099,7 @@ function markDirty() {
   if (persistTimer !== null) clearTimeout(persistTimer);
   persistTimer = setTimeout(() => {
     persistTimer = null;
+    if (location.search.includes('selftest')) return;
     try {
       saveCurrentScene();
       persistScenes();
