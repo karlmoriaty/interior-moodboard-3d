@@ -3234,154 +3234,383 @@ function buildSceneWarm() {
   };
 }
 
-/* ============================== 场景二：雾林卧室（v8.1） ==============================
-   参考图：一整面黑框格子窗对着雾中杉林，室内是米色被褥的大床、左侧立式钢琴、
-   床头两侧台灯、顶部垂下来的灯泡串。房间外壳仍是 8×6×3。
+/* ============================== 场景二/三/四（v9.0 重做） ==============================
+   四套场景是四个真正不同的房间：各自的墙窗结构、各自的家具、各自的灯光。
+   不再用"同一个房间换颜色"糊弄。
    ============================================================================== */
-function buildSceneForest() {
+
+/* ---- 公共：重置材质槽与房间 group ---- */
+function sceneBootstrap() {
   for (const k of SURFACE_KEYS) {
     if (surfaceMat[k]) surfaceMat[k].dispose();
     surfaceMat[k] = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0 });
   }
-
   room = new THREE.Group();
   MODEL.add(room);
-
   const W = ROOM_W, D = ROOM_D, H = ROOM_H, T = ROOM_T;
   const X0 = RB_X0, X1 = RB_X1, Z0 = RB_Z0, Z1 = RB_Z1;
-
-  const dark = new THREE.MeshStandardMaterial({ color: 0x16181a, roughness: 0.55, metalness: 0.25 });
   const put = (m) => { room.add(m); return m; };
   const box = (w, h, d, x, y, z, mat, cast = true) => {
     const m = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
     m.position.set(x, y, z);
-    m.castShadow = cast;
-    m.receiveShadow = true;
+    m.castShadow = cast; m.receiveShadow = true;
     return put(m);
   };
+  return { W, D, H, T, X0, X1, Z0, Z1, put, box };
+}
 
-  /* 地板：暖木，压一层深色踢脚 */
+/* ---- 场景二：林间咖啡馆 ---- */
+function buildSceneCafe() {
+  const { W, D, H, T, X0, X1, Z0, put, box } = sceneBootstrap();
+  const wood = new THREE.MeshStandardMaterial({ color: 0x3a291c, roughness: 0.82 });
+  const woodLight = new THREE.MeshStandardMaterial({ color: 0x5c4129, roughness: 0.78 });
+  const black = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.5, metalness: 0.35 });
+
+  /* 深色木地板 + 木柱木梁 */
   box(W, T, D, 0, -T / 2, 0, surfaceMat.floor, false);
-  box(W, 0.06, 0.02, 0, 0.03, Z0 + 0.012, dark, false);
+  for (const px of [X0 + 0.3, -0.4, X1 - 0.3]) {
+    box(0.2, H, 0.2, px, H / 2, Z0 + 0.3, wood);
+  }
+  for (const pz of [Z0 + 0.3, 0.2, 2.8]) {
+    box(W, 0.18, 0.22, 0, H - 0.12, pz, wood);
+  }
 
-  /* 后墙：几乎整面都是窗，只留结构边 */
+  /* 三扇拱形窗：下半矩形 + 上半半圆，木框 + 淡玻璃。
+     窗外是程序化花园（复用雾林贴图思路，但偏绿）。 */
+  const arches = [
+    { x: -2.6, w: 2.0 }, { x: 0, w: 2.0 }, { x: 2.6, w: 2.0 },
+  ];
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0xa8b8a0, roughness: 0.1, metalness: 0.05,
+    transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false,
+  });
+  for (const A of arches) {
+    const hRect = 1.85, r = A.w / 2;
+    /* 下段玻璃 */
+    const pane = new THREE.Mesh(new THREE.PlaneGeometry(A.w, hRect), glassMat);
+    pane.position.set(A.x, hRect / 2 + 0.08, Z0 + 0.06);
+    put(pane);
+    /* 拱顶玻璃：半圆 */
+    const arc = new THREE.Mesh(new THREE.CircleGeometry(r, 24, 0, Math.PI), glassMat);
+    arc.position.set(A.x, hRect + 0.08, Z0 + 0.06);
+    put(arc);
+    /* 木框：两侧立框 + 上下横档 + 半圆拱 */
+    for (const sx of [-1, 1]) box(0.09, hRect + 0.1, 0.12, A.x + sx * r, (hRect + 0.1) / 2, Z0 + 0.08, wood);
+    box(A.w + 0.18, 0.1, 0.12, A.x, 0.06, Z0 + 0.08, wood);
+    const hoop = new THREE.Mesh(new THREE.TorusGeometry(r, 0.045, 8, 26, Math.PI), wood);
+    hoop.position.set(A.x, hRect + 0.08, Z0 + 0.08);
+    put(hoop);
+    /* 窗中竖梃 */
+    box(0.04, hRect, 0.08, A.x, hRect / 2 + 0.08, Z0 + 0.075, wood);
+  }
+  /* 拱窗之间的实墙 */
+  for (const px of [-1.3, 1.3]) box(0.6, H, T, px, H / 2, Z0 - T / 2, surfaceMat.wallBack);
+  /* 左墙 */
+  box(T, H, D, X0 - T / 2, H / 2, 0, surfaceMat.wallSide);
+
+  /* 环形吊灯：悬在中央茶几上方 */
+  const ring = new THREE.Mesh(
+    new THREE.TorusGeometry(0.62, 0.045, 10, 48),
+    new THREE.MeshStandardMaterial({ color: 0xffe0ae, emissive: 0xffc884, emissiveIntensity: 2.2, roughness: 0.4 }),
+  );
+  ring.rotation.x = Math.PI / 2;
+  ring.position.set(-0.2, 2.32, -0.7);
+  put(ring);
+  for (let i = 0; i < 6; i++) {
+    const ang = (i / 6) * Math.PI * 2;
+    const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.006, 0.006, 0.5, 6), black);
+    wire.position.set(-0.2 + Math.cos(ang) * 0.62, 2.57, -0.7 + Math.sin(ang) * 0.62);
+    put(wire);
+  }
+
+  /* 右侧吧台：长柜 + 台面 + 咖啡机 + 玻璃展示柜 + 上方书架 */
+  box(2.5, 0.92, 0.62, 2.6, 0.46, -1.5, woodLight);
+  box(2.66, 0.07, 0.76, 2.6, 0.95, -1.5, wood);
+  /* 咖啡机：机身 + 蒸汽棒 + 两个出液口 */
+  box(0.72, 0.48, 0.42, 2.3, 1.22, -1.52, black);
+  box(0.78, 0.08, 0.46, 2.3, 1.5, -1.52, woodLight);
+  for (const cx of [2.16, 2.44]) box(0.05, 0.14, 0.06, cx, 1.02, -1.3, black);
+  /* 展示柜：玻璃罩 + 里面三排糕点 */
+  const showcase = new THREE.Mesh(new THREE.BoxGeometry(0.78, 0.4, 0.4), glassMat);
+  showcase.position.set(3.35, 1.19, -1.5);
+  put(showcase);
+  for (let r = 0; r < 3; r++) box(0.7, 0.02, 0.34, 3.35, 1.02 + r * 0.12, -1.5, woodLight);
+  /* 吧台上方深色木搁板 + 杯子 */
+  for (const sy of [1.86, 2.3]) {
+    box(2.5, 0.06, 0.34, 2.6, sy, Z0 + 0.24, wood);
+    for (let i = 0; i < 5; i++) {
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.055, 0.055, 0.1, 10), woodLight);
+      cup.position.set(1.7 + i * 0.42, sy + 0.08, Z0 + 0.24);
+      put(cup);
+    }
+  }
+  /* 吧台吊灯：两个小碟 */
+  for (const lx of [2.0, 3.2]) {
+    const lamp = new THREE.Mesh(new THREE.ConeGeometry(0.22, 0.2, 16, 1, true),
+      new THREE.MeshStandardMaterial({ color: 0x2a2622, roughness: 0.6, emissive: 0x442a10, emissiveIntensity: 0.4, side: THREE.DoubleSide }));
+    lamp.position.set(lx, 2.5, -1.2);
+    put(lamp);
+  }
+
+  /* 左墙搁板 + 蜡烛 */
+  for (const sy of [1.05, 1.5]) {
+    box(0.26, 0.04, 1.5, X0 + 0.13, sy, -1.6, wood);
+  }
+
+  /* 灯光：顶灯极弱，靠环形灯与吧台灯 */
+  cove = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 3), black);
+  cove.position.set(0, H - 0.04, -0.5);
+  cove.visible = false;
+  put(cove);
+  coveLight = new THREE.PointLight(0xffcf94, 0, 5 * MODEL_SCALE, 2);
+  coveLight.position.set(-0.2, 2.35, -0.7);
+  put(coveLight);
+  wallGlow = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), new THREE.MeshBasicMaterial({ color: 0xffc98a, transparent: true, opacity: 0, depthWrite: false }));
+  wallGlow.position.set(X0 + 0.02, 1.5, -1.4);
+  wallGlow.rotation.y = Math.PI / 2;
+  put(wallGlow);
+  floorPool = new THREE.Mesh(new THREE.PlaneGeometry(4, 3), new THREE.MeshBasicMaterial({ color: 0xffbe7c, transparent: true, opacity: 0, depthWrite: false }));
+  floorPool.rotation.x = -Math.PI / 2;
+  floorPool.position.set(0, 0.02, -1);
+  put(floorPool);
+  windowCast = new THREE.Mesh(new THREE.PlaneGeometry(5, 2), new THREE.MeshBasicMaterial({ color: 0xd8e0cc, transparent: true, opacity: 0, depthWrite: false }));
+  windowCast.rotation.x = -Math.PI / 2;
+  windowCast.position.set(0, 0.018, -1.9);
+  put(windowCast);
+  /* 窗外花园：程序化天空 + 树影，不要露出公寓自己的城市夜景 */
+  const gardenTex = (() => {
+    const c = document.createElement('canvas'); c.width = 512; c.height = 320;
+    const g = c.getContext('2d');
+    const sky = g.createLinearGradient(0, 0, 0, 320);
+    sky.addColorStop(0, '#6b7d68'); sky.addColorStop(0.5, '#889580'); sky.addColorStop(1, '#5a6b52');
+    g.fillStyle = sky; g.fillRect(0, 0, 512, 320);
+    for (let i = 0; i < 22; i++) {
+      const x = (i / 22) * 512 + (i % 3) * 7;
+      const h = 60 + (i * 37) % 110;
+      g.fillStyle = i % 2 ? 'rgba(42,66,44,.7)' : 'rgba(58,82,52,.65)';
+      g.beginPath(); g.moveTo(x, 320); g.lineTo(x - 18, 320 - h); g.lineTo(x + 18, 320 - h); g.fill();
+    }
+    for (let i = 0; i < 40; i++) {
+      g.fillStyle = 'rgba(198,106,150,' + (0.35 + (i % 4) * 0.1) + ')';
+      g.beginPath(); g.arc((i * 71) % 512, 250 + (i % 5) * 12, 4 + (i % 3), 0, Math.PI * 2); g.fill();
+    }
+    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+  })();
+  roomViewTex = { day: gardenTex, night: gardenTex };
+  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(W + 1.2, H + 0.4),
+    new THREE.MeshBasicMaterial({ map: gardenTex, fog: false }));
+  skyCard.position.set(0, H / 2, Z0 - 0.5);
+  put(skyCard);
+
+  /* 地毯 */
+  const rugM = new THREE.Mesh(new THREE.BoxGeometry(4.2, 0.014, 3.2), surfaceMat.rug);
+  rugM.position.set(-0.3, 0.011, -0.7);
+  rugM.userData.surface = 'rug';
+  rugM.receiveShadow = true;
+  put(rugM);
+
+  initialPieces = [
+    ['coffeeTable', -0.3, -0.7, 0],
+    ['armchair', -2.1, -0.2, -0.5],
+    ['armchair', -1.7, -1.6, 0.4],
+    ['sideTable', -2.9, -0.9, 0],
+    ['candleCluster', -0.3, -0.2, 0],
+    ['candle', -2.9, -1.2, 0],
+    ['plant', -3.3, -2.4, 0.3],
+    ['plant', 1.6, -2.6, -0.2],
+    ['bookStack', -0.8, -0.9, 0.3],
+    ['fireplace', 3.3, 1.2, -Math.PI / 2],
+  ];
+
+  return {
+    id: 'cafe', name: '林间咖啡馆', hour: 17.4,
+    mats: {
+      floor: ['wood', 'smoked'], wallBack: ['paint', 'ash'], wallSide: ['wood', 'walnut'],
+      sofa: ['fabric', 'linen'], rug: ['fabric', 'tweed'], woodwork: ['wood', 'walnut'],
+    },
+  };
+}
+
+/* ---- 场景三：夜景公寓 ---- */
+function buildSceneNight() {
+  const { W, D, H, T, X0, X1, Z0, put, box } = sceneBootstrap();
+  const black = new THREE.MeshStandardMaterial({ color: 0x111317, roughness: 0.42, metalness: 0.4 });
+  const blueMat = new THREE.MeshBasicMaterial({ color: 0x2a9fed, toneMapped: false });
+
+  /* 深色木地板 */
+  box(W, T, D, 0, -T / 2, 0, surfaceMat.floor, false);
+  box(T, H, D, X0 - T / 2, H / 2, 0, surfaceMat.wallSide);
+
+  /* 通高落地窗：四扇黑框玻璃，窗外城市 */
+  const panes = [-2.7, -0.9, 0.9, 2.7];
+  for (const px of panes) {
+    box(1.75, 2.9, 0.09, px, 1.48, Z0 + 0.04, black);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.68, 2.82),
+      new THREE.MeshStandardMaterial({ color: 0x0b1018, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.3 }));
+    glass.position.set(px, 1.48, Z0 + 0.1);
+    put(glass);
+  }
+  /* 窗上横档 */
+  box(W - 0.2, 0.07, 0.1, 0, 2.95, Z0 + 0.06, black);
+
+  /* 窗外城市：复用项目已有的实拍夜景（city-photo.js 内联，零外部依赖） */
+  const cityMat = new THREE.MeshBasicMaterial({ map: viewTex.night, fog: false, toneMapped: false });
+  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(W + 1.2, H + 0.4), cityMat);
+  skyCard.position.set(0, H / 2, Z0 - 0.5);
+  put(skyCard);
+  roomViewTex = { day: viewTex.day, night: viewTex.night };
+
+  /* 天花板暗藏暖黄灯带：三道 */
+  const warmStrip = new THREE.MeshStandardMaterial({ color: 0xffcf8e, emissive: 0xffb45e, emissiveIntensity: 2.0, roughness: 0.5 });
+  for (const sx of [-3.2, 0, 3.2]) box(2.4, 0.035, 0.06, sx, H - 0.05, 0.4, warmStrip, false);
+  /* 蓝色 LED 灯带：沿窗台与踢脚 */
+  for (const by of [0.055, 0.62]) box(W - 0.3, 0.028, 0.035, 0, by, Z0 + 0.14, blueMat, false);
+
+  /* 左侧落地壁炉（砖砌） + 书架 */
+  const brick = new THREE.MeshStandardMaterial({ color: 0x3b2a24, roughness: 0.9 });
+  box(0.5, 1.7, 1.1, X0 + 0.25, 0.85, 0.4, brick);
+  const opening = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.62, 0.62),
+    new THREE.MeshBasicMaterial({ color: 0xff7a28, toneMapped: false }));
+  opening.position.set(X0 + 0.52, 0.44, 0.4);
+  put(opening);
+  for (const sy of [1.05, 1.5, 1.95]) box(0.35, 0.05, 1.3, X0 + 0.2, sy, -1.6, black);
+
+  /* 灯光 */
+  cove = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.05, 3), black);
+  cove.position.set(0, H - 0.04, 0.4);
+  cove.visible = false;
+  put(cove);
+  coveLight = new THREE.PointLight(0xffbc78, 0, 5 * MODEL_SCALE, 2);
+  coveLight.position.set(-0.2, 2.5, 0.2);
+  put(coveLight);
+  wallGlow = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), new THREE.MeshBasicMaterial({ color: 0xffa860, transparent: true, opacity: 0, depthWrite: false }));
+  wallGlow.position.set(X0 + 0.02, 1.5, 0.4);
+  wallGlow.rotation.y = Math.PI / 2;
+  put(wallGlow);
+  floorPool = new THREE.Mesh(new THREE.PlaneGeometry(5, 3), new THREE.MeshBasicMaterial({ color: 0xff9c55, transparent: true, opacity: 0, depthWrite: false }));
+  floorPool.rotation.x = -Math.PI / 2;
+  floorPool.position.set(0, 0.02, -1);
+  put(floorPool);
+  windowCast = new THREE.Mesh(new THREE.PlaneGeometry(6, 2), new THREE.MeshBasicMaterial({ color: 0x4a7fbf, transparent: true, opacity: 0, depthWrite: false }));
+  windowCast.rotation.x = -Math.PI / 2;
+  windowCast.position.set(0, 0.018, -1.6);
+  put(windowCast);
+
+  /* 深色地毯 */
+  const rugM = new THREE.Mesh(new THREE.BoxGeometry(4.6, 0.014, 3.4), surfaceMat.rug);
+  rugM.position.set(0.2, 0.011, -1.1);
+  rugM.userData.surface = 'rug';
+  rugM.receiveShadow = true;
+  put(rugM);
+
+  initialPieces = [
+    ['bed', 0.4, -1.25, 0],
+    ['shelf', -3.45, -1.6, Math.PI / 2],
+    ['sideTable', -1.45, -2.05, 0],
+    ['sideTable', 2.35, -2.05, 0],
+    ['lamp', 2.8, 0.4, 0],
+    ['plant', 1.7, -2.6, 0.2],
+    ['candle', -1.45, -2.3, 0],
+  ];
+
+  return {
+    id: 'night', name: '夜景公寓', hour: 21.2,
+    mats: {
+      floor: ['wood', 'smoked'], wallBack: ['paint', 'deep'], wallSide: ['paint', 'deep'],
+      sofa: ['fabric', 'velvet'], rug: ['fabric', 'indigo'], woodwork: ['wood', 'walnut'],
+    },
+  };
+}
+
+/* ---- 场景四：雾林卧室（重做：加串灯、琴凳、球形台灯、格纹毯） ---- */
+function buildSceneForest() {
+  const { W, D, H, T, X0, X1, Z0, put, box } = sceneBootstrap();
+  const black = new THREE.MeshStandardMaterial({ color: 0x16181a, roughness: 0.5, metalness: 0.28 });
+  const woodTrim = new THREE.MeshStandardMaterial({ color: 0x3b342c, roughness: 0.8 });
+
+  box(W, T, D, 0, -T / 2, 0, surfaceMat.floor, false);
+  box(T, H, D, X0 - T / 2, H / 2, 0, surfaceMat.wallSide);
+
+  /* 4 列 × 3 行黑框格子窗 */
   const WIN = { x0: -3.55, x1: 3.55, y0: 0.18, y1: 2.92 };
+  const fw = 0.05;
+  for (const mx of [WIN.x0, -1.775, 0, 1.775, WIN.x1]) box(fw, WIN.y1 - WIN.y0, 0.1, mx, (WIN.y0 + WIN.y1) / 2, Z0 + 0.03, black);
+  for (const my of [WIN.y0, 1.09, 2.0, WIN.y1]) box(WIN.x1 - WIN.x0, fw, 0.1, 0, my, Z0 + 0.03, black);
   box(WIN.x0 - X0, H, T, (X0 + WIN.x0) / 2, H / 2, Z0 - T / 2, surfaceMat.wallBack);
   box(X1 - WIN.x1, H, T, (WIN.x1 + X1) / 2, H / 2, Z0 - T / 2, surfaceMat.wallBack);
   box(WIN.x1 - WIN.x0, WIN.y0, T, 0, WIN.y0 / 2, Z0 - T / 2, surfaceMat.wallBack);
   box(WIN.x1 - WIN.x0, H - WIN.y1, T, 0, (H + WIN.y1) / 2, Z0 - T / 2, surfaceMat.wallBack);
 
-  /* 左墙：米色 */
-  box(T, H, D, X0 - T / 2, H / 2, 0, surfaceMat.wallSide);
+  /* 窗外雾林：已有内联贴图 */
+  const t = new THREE.TextureLoader().load(FOREST_BG);
+  t.colorSpace = THREE.SRGBColorSpace;
+  roomViewTex = { day: t, night: t };
+  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(WIN.x1 - WIN.x0, WIN.y1 - WIN.y0),
+    new THREE.MeshBasicMaterial({ map: t }));
+  skyCard.position.set(0, (WIN.y0 + WIN.y1) / 2, Z0 - 0.26);
+  put(skyCard);
 
-  /* 窗：4 列 × 3 行的黑框格子 */
-  const fw = 0.045;
-  for (const mx of [WIN.x0, -1.775, 0, 1.775, WIN.x1]) {
-    box(fw, WIN.y1 - WIN.y0, 0.1, mx, (WIN.y0 + WIN.y1) / 2, Z0 + 0.03, dark);
+  /* 串灯：沿窗上沿垂下来的暖黄灯泡 */
+  const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffd89a, toneMapped: false });
+  for (let i = 0; i < 16; i++) {
+    const bx = -3.4 + (i / 15) * 6.8;
+    const drop = 0.12 + Math.sin(i * 1.7) * 0.08;
+    const wire = new THREE.Mesh(new THREE.CylinderGeometry(0.004, 0.004, drop, 5), black);
+    wire.position.set(bx, WIN.y1 - drop / 2, Z0 + 0.16);
+    put(wire);
+    const bulb = new THREE.Mesh(new THREE.SphereGeometry(0.035, 8, 6), bulbMat);
+    bulb.position.set(bx, WIN.y1 - drop, Z0 + 0.16);
+    put(bulb);
   }
-  for (const my of [WIN.y0, 0.18 + (WIN.y1 - WIN.y0) / 3, 0.18 + ((WIN.y1 - WIN.y0) * 2) / 3, WIN.y1]) {
-    box(WIN.x1 - WIN.x0, fw, 0.1, 0, my, Z0 + 0.03, dark);
-  }
 
-  /* 窗外：雾林 */
-  /* 窗外用 Blender 渲染的雾林（内联 JPEG）：白天晚上同一张，靠 setHour 调亮度 */
-  const forestMap = (() => { const t = new THREE.TextureLoader().load(FOREST_BG); t.colorSpace = THREE.SRGBColorSpace; return t; })();
-  roomViewTex = { day: forestMap, night: forestMap };
-  const glassPane = new THREE.Mesh(
-    new THREE.PlaneGeometry(WIN.x1 - WIN.x0, WIN.y1 - WIN.y0),
-    new THREE.MeshBasicMaterial({ map: forestMap }),
-  );
-  glassPane.position.set(0, (WIN.y0 + WIN.y1) / 2, Z0 - 0.26);
-  put(glassPane);
-  skyCard = glassPane;
+  /* 左墙护墙板 + 腰线 */
+  box(0.03, 0.92, D - 0.2, X0 + 0.015, 0.46, 0, woodTrim);
+  box(0.06, 0.05, D - 0.2, X0 + 0.03, 0.945, 0, woodTrim);
 
-  /* 顶部：没有主灯，只有一圈极弱的顶光，亮度靠台灯与串灯 */
-  cove = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.05, D * 0.8), dark);
-  cove.position.set(0, H - 0.03, -0.3);
+  /* 灯光 */
+  cove = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.05, 3), black);
+  cove.position.set(0, H - 0.04, -0.4);
   cove.visible = false;
   put(cove);
-
   coveLight = new THREE.PointLight(0xffe0b8, 0, 5.2 * MODEL_SCALE, 2);
   coveLight.position.set(0.2, H - 0.45, -0.6);
   put(coveLight);
-
-  wallGlow = new THREE.Mesh(
-    new THREE.PlaneGeometry(3.2, 2.2),
-    new THREE.MeshBasicMaterial({ color: 0xffd9a8, transparent: true, opacity: 0, depthWrite: false }),
-  );
+  wallGlow = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.2), new THREE.MeshBasicMaterial({ color: 0xffd9a8, transparent: true, opacity: 0, depthWrite: false }));
   wallGlow.position.set(X0 + 0.02, 1.5, -0.4);
   wallGlow.rotation.y = Math.PI / 2;
   put(wallGlow);
-
-  floorPool = new THREE.Mesh(
-    new THREE.PlaneGeometry(4.6, 3.4),
-    new THREE.MeshBasicMaterial({ color: 0xffcf9a, transparent: true, opacity: 0, depthWrite: false }),
-  );
+  floorPool = new THREE.Mesh(new THREE.PlaneGeometry(4.6, 3.4), new THREE.MeshBasicMaterial({ color: 0xffcf9a, transparent: true, opacity: 0, depthWrite: false }));
   floorPool.rotation.x = -Math.PI / 2;
   floorPool.position.set(0.2, 0.02, -0.8);
   put(floorPool);
-
   windowCast = new THREE.Mesh(new THREE.PlaneGeometry(6.4, 2.4), new THREE.MeshBasicMaterial({ color: 0xd8e2e0, transparent: true, opacity: 0, depthWrite: false }));
   windowCast.rotation.x = -Math.PI / 2;
   windowCast.position.set(0, 0.018, -1.6);
   put(windowCast);
 
-  /* 左墙的护墙板 + 一道木腰线：整面浅灰在俯视下太空，加条线把墙面分段 */
-  {
-    const wainscot = new THREE.MeshStandardMaterial({ color: 0x3b342c, roughness: 0.82 });
-    const panel = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.92, D - 0.2), wainscot);
-    panel.position.set(X0 + 0.015, 0.46, 0);
-    panel.receiveShadow = true;
-    put(panel);
-    const rail = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.05, D - 0.2), wainscot);
-    rail.position.set(X0 + 0.03, 0.945, 0);
-    put(rail);
-    /* 腰线上方挂一幅素色小画，破一下大面积空白 */
-    const artMat = new THREE.MeshStandardMaterial({
-      color: 0x8f8375, roughness: 0.9, emissive: 0x1a1611, emissiveIntensity: 0.5,
-    });
-    const art = new THREE.Mesh(new THREE.PlaneGeometry(0.72, 0.96), artMat);
-    art.rotation.y = Math.PI / 2;
-    art.position.set(X0 + 0.031, 1.62, -1.2);
-    put(art);
-    const artFrame = new THREE.Mesh(new THREE.BoxGeometry(0.025, 1.02, 0.78), wainscot);
-    artFrame.position.set(X0 + 0.018, 1.62, -1.2);
-    put(artFrame);
-  }
+  /* 浅色地毯 */
+  const rugM = new THREE.Mesh(new THREE.BoxGeometry(5.4, 0.014, 3.9), surfaceMat.rug);
+  rugM.position.set(0.3, 0.011, -1.3);
+  rugM.userData.surface = 'rug';
+  rugM.receiveShadow = true;
+  put(rugM);
 
-  /* 地毯：浅米，压住床前这一块 */
-  const rugEdge = new THREE.Mesh(
-    new THREE.BoxGeometry(5.3, 0.006, 4.0),
-    new THREE.MeshStandardMaterial({ color: 0x8d8375, roughness: 0.96 }),
-  );
-  rugEdge.position.set(0.3, 0.004, -0.9);
-  put(rugEdge);
-  const rug2 = new THREE.Mesh(new THREE.BoxGeometry(5.14, 0.014, 3.84), surfaceMat.rug);
-  rug2.position.set(0.3, 0.011, -0.9);
-  rug2.receiveShadow = true;
-  rug2.userData.surface = 'rug';
-  put(rug2);
-
-  /* 默认布置：床在窗正中偏右，钢琴在左后，台灯在两侧 */
   initialPieces = [
     ['bed', 0.55, -1.35, 0],
     ['piano', -3.05, -1.55, 0],
+    ['stool', -2.15, -0.75, 0],
     ['sideTable', -1.35, -2.05, 0],
     ['sideTable', 2.55, -2.05, 0],
     ['lamp', 2.95, 0.55, 0],
     ['plant', -2.35, -2.55, 0.2],
     ['plant', 1.85, -2.62, -0.3],
     ['candle', -1.35, -2.35, 0],
-    ['candle', 2.55, -1.72, 0],
     ['bookStack', 2.55, -2.35, 0.5],
   ];
 
   return {
-    id: 'forest',
-    name: '雾林卧室',
-    hour: 9.4,
+    id: 'forest', name: '雾林卧室', hour: 9.4,
     mats: {
-      /* 墙用浅灰：米白的大墙面在俯视下会白得发飘 */
       floor: ['wood', 'oak'], wallBack: ['paint', 'ash'], wallSide: ['paint', 'ash'],
       sofa: ['fabric', 'linen'], rug: ['fabric', 'boucle'], woodwork: ['wood', 'oak'],
     },
@@ -3394,11 +3623,13 @@ function buildSceneForest() {
    ====================================================================== */
 const SCENES = {
   /* warm 放第一位：首次打开的默认场景就是它 */
-  warm: { build: buildSceneWarm, label: '暖光客厅', hint: '雪夜别墅 · 落地窗与烛光' },
+  warm:   { build: buildSceneWarm,   label: '暖光客厅', hint: '雪夜别墅 · 玻璃幕墙与烛光' },
+  cafe:   { build: buildSceneCafe,   label: '林间咖啡馆', hint: '拱窗花园 · 吧台与藤椅' },
+  night:  { build: buildSceneNight,  label: '夜景公寓', hint: '城市夜色 · 暗调与蓝灯带' },
   forest: { build: buildSceneForest, label: '雾林卧室', hint: '雨雾杉林 · 格子窗与床' },
 };
 
-const STORAGE_KEY = 'moodroom:scenes:v8';
+const STORAGE_KEY = 'moodroom:scenes:v9';
 
 /* 把 PIECES 里当前的摆放压成可序列化数组 */
 function snapshotPieces() {
@@ -4782,6 +5013,8 @@ function setHour(h, silent) {
     const want = pair[cylKey] || pair.night;
     if (m.material.map !== want) { m.material.map = want; m.material.needsUpdate = true; }
   }
+  /* 场景可能没建窗外卡片（比如某些结构件场景），跳过而不是整页崩掉 */
+  if (!skyCard || !skyCard.material || !roomViewTex) return;
   skyCard.material.map = (w.day > 0.5) ? roomViewTex.day : roomViewTex.night;
   /* 夜里窗后是房间的暖光，白天是漫射天光；都只是二层，不是城市 */
   skyCard.material.needsUpdate = true;
