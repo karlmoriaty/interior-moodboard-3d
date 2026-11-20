@@ -61505,7 +61505,20 @@ function resize() {
 window.addEventListener('resize', resize);
 
 let needsRender = true;
-function markDirty() { needsRender = true; }
+let persistTimer = null;
+function markDirty() {
+  needsRender = true;
+  /* 所有状态变更（放家具/换材质/拉时间/撤销）最终都会走到这里。
+     防抖 400ms：拖动时每帧都会 markDirty，不能每帧序列化整个场景。 */
+  if (persistTimer !== null) clearTimeout(persistTimer);
+  persistTimer = setTimeout(() => {
+    persistTimer = null;
+    try {
+      saveCurrentScene();
+      persistScenes();
+    } catch (err) { /* 存档失败不该影响使用 */ }
+  }, 400);
+}
 
 /* 前 30 帧无条件渲染：贴图是运行时画的，头几帧可能在编译着色器、
    也可能被子采样裁到一半，连续画一段能保证首屏是完整的。 */
