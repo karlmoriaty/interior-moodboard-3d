@@ -3997,29 +3997,11 @@ function addCyl(parent, rt, rb, h, x, y, z, mat, seg = 14) {
 
 function makeSofa() { return buildFurniture('sofa', 2.35, 0.95, 0.86); }
 
-function makeArmchair() {
-  const g = pieceGroup('armchair', 0.92, 0.88, 0.82);
-  const mat = surfaceMat.sofa;
-  const w = 0.92, d = 0.88;
-  addBox(g, w, 0.24, d, 0, 0.26, 0, mat, 'sofa');
-  addBox(g, w, 0.52, 0.15, 0, 0.64, -d / 2 + 0.075, mat, 'sofa');
-  addBox(g, 0.13, 0.36, d, -w / 2 + 0.065, 0.56, 0, mat, 'sofa');
-  addBox(g, 0.13, 0.36, d, w / 2 - 0.065, 0.56, 0, mat, 'sofa');
-  addBox(g, w - 0.26, 0.13, d - 0.2, 0, 0.44, 0.03, mat, 'sofa');
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) addCyl(g, 0.024, 0.02, 0.14, sx * (w / 2 - 0.1), 0.07, sz * (d / 2 - 0.1), legMat, 10);
-  return g;
-}
+function makeArmchair() { return buildFurniture('armchair', 0.92, 0.88, 0.82); }
 
 function makeCoffeeTable() { return buildFurniture('coffeeTable', 1.42, 0.82, 0.5); }
 
-function makeSideTable() {
-  const g = pieceGroup('sideTable', 0.44, 0.44, 0.5);
-  const mat = surfaceMat.woodwork;
-  addCyl(g, 0.22, 0.22, 0.035, 0, 0.48, 0, mat, 24);
-  addCyl(g, 0.035, 0.045, 0.47, 0, 0.24, 0, legMat, 10);
-  addCyl(g, 0.17, 0.19, 0.02, 0, 0.01, 0, legMat, 20);
-  return g;
-}
+function makeSideTable() { return buildFurniture('sideTable', 0.44, 0.44, 0.5); }
 
 function makeDiningTable() {
   const g = pieceGroup('diningTable', 1.7, 0.88, 0.75);
@@ -4039,27 +4021,7 @@ function makeChair() {
   return g;
 }
 
-function makeShelf() {
-  const g = pieceGroup('shelf', 0.94, 0.34, 1.86);
-  const mat = surfaceMat.woodwork;
-  addBox(g, 0.04, 1.86, 0.34, -0.45, 0.93, 0, mat, 'woodwork');
-  addBox(g, 0.04, 1.86, 0.34, 0.45, 0.93, 0, mat, 'woodwork');
-  for (let i = 0; i < 5; i++) addBox(g, 0.86, 0.03, 0.32, 0, 0.16 + i * 0.4, 0, mat, 'woodwork');
-  addBox(g, 0.9, 0.02, 0.32, 0, 1.86, 0, mat, 'woodwork');
-  addBox(g, 0.86, 1.7, 0.02, 0, 0.95, -0.15, mat, 'woodwork');
-  /* 几本书，别整面空板 */
-  const bookMats = [bookInk, bookRust, paperMat];
-  for (let shelf = 0; shelf < 3; shelf++) {
-    let bx = -0.32;
-    for (let i = 0; i < 4; i++) {
-      const bh = 0.20 + ((i + shelf) % 3) * 0.035;
-      addBox(g, 0.045, bh, 0.20, bx, 0.18 + shelf * 0.4 + bh / 2, 0.015, bookMats[(i + shelf) % 3]);
-      bx += 0.055;
-    }
-  }
-  addBox(g, 0.22, 0.16, 0.20, 0.22, 1.27, 0.01, ceramicMat);
-  return g;
-}
+function makeShelf() { return buildFurniture('shelf', 0.94, 0.34, 1.86); }
 
 function makeSideboard() {
   const g = pieceGroup('sideboard', 1.4, 0.42, 0.74);
@@ -4094,56 +4056,11 @@ function makeBench() {
   return g;
 }
 
-function makeStool() {
-  const g = pieceGroup('stool', 0.36, 0.36, 0.44);
-  addCyl(g, 0.18, 0.17, 0.08, 0, 0.4, 0, surfaceMat.sofa, 24);
-  addCyl(g, 0.05, 0.06, 0.36, 0, 0.18, 0, surfaceMat.woodwork, 16);
-  addCyl(g, 0.15, 0.16, 0.02, 0, 0.01, 0, legMat, 20);
-  return g;
-}
+function makeStool() { return buildFurniture('stool', 0.36, 0.36, 0.44); }
 
-function makeLamp() {
-  const g = pieceGroup('lamp', 0.42, 0.42, 1.62);
-  addCyl(g, 0.16, 0.19, 0.025, 0, 0.02, 0, legMat, 20);
-  addCyl(g, 0.018, 0.018, 1.4, 0, 0.72, 0, legMat, 8);
-  const shade = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.21, 0.3, 22, 1, true), shadeMat);
-  shade.position.set(0, 1.48, 0);
-  shade.castShadow = false;
-  g.add(shade);
-  /* 向下照的锥形光，而不是全向点光：点光会直怼后墙烧出一个白圆斑，
-     锥形光的边缘软，墙上只剩一层渐变，地板上留一摊暖光池。 */
-  const bulb = new THREE.SpotLight(0xffb877, 0, 7 * MODEL_SCALE, 1.05, 0.9, 1.6);
-  bulb.position.set(0, 1.42, 0);
-  bulb.target.position.set(0, 0, 0.6);
-  g.add(bulb);
-  g.add(bulb.target);
-  g.userData.bulb = bulb;
-  /* 灯罩周围一圈晕，跟着灯走 */
-  const halo = new THREE.Mesh(
-    new THREE.PlaneGeometry(0.9, 0.9),
-    new THREE.MeshBasicMaterial({ map: spillTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0, toneMapped: false }),
-  );
-  halo.position.set(0, 1.46, 0);
-  g.add(halo);
-  g.userData.halo = halo;
-  return g;
-}
+function makeLamp() { return buildFurniture('lamp', 0.42, 0.42, 1.62); }
 
-function makePlant() {
-  const g = pieceGroup('plant', 0.58, 0.58, 1.2);
-  addCyl(g, 0.19, 0.14, 0.34, 0, 0.17, 0, new THREE.MeshStandardMaterial({ color: 0x8c7f70, roughness: 0.9 }), 18);
-  addCyl(g, 0.022, 0.03, 0.42, 0, 0.5, 0, legMat, 8);
-  const leaf = new THREE.IcosahedronGeometry(0.26, 1);
-  const spots = [[0, 0.72, 0, 1], [-0.16, 0.9, 0.08, 0.8], [0.17, 0.98, -0.06, 0.72], [0.02, 1.14, 0.04, 0.55], [-0.1, 1.04, -0.14, 0.5]];
-  for (const [x, y, z, s] of spots) {
-    const m = new THREE.Mesh(leaf, leavesMat);
-    m.position.set(x, y, z);
-    m.scale.setScalar(s);
-    m.castShadow = true;
-    g.add(m);
-  }
-  return g;
-}
+function makePlant() { return buildFurniture('plant', 0.58, 0.58, 1.2); }
 
 function makePendant() {
   /* v7.1：参考图的吊灯是一只白色浅碟，几乎贴着桌面高度吊下来。
@@ -4388,19 +4305,7 @@ function makePainting() {
   return g;
 }
 
-function makeBookStack() {
-  const g = pieceGroup('bookStack', 0.4, 0.3, 0.26);
-  const mats = [bookRust, bookInk, paperMat, accentMat, bookInk];
-  const sizes = [[0.34, 0.05, 0.26], [0.31, 0.045, 0.24], [0.33, 0.055, 0.23], [0.28, 0.04, 0.22], [0.3, 0.05, 0.2]];
-  let y = 0;
-  for (let i = 0; i < 5; i++) {
-    const [w, h, d] = sizes[i];
-    const b = addBox(g, w, h, d, (i % 2 ? 0.02 : -0.015) * i, y + h / 2, (i % 2 ? -0.01 : 0.015) * i, mats[i]);
-    b.rotation.y = (i % 3 - 1) * 0.07;
-    y += h;
-  }
-  return g;
-}
+function makeBookStack() { return buildFurniture('bookStack', 0.4, 0.3, 0.26); }
 
 function makeBookRow() {
   const g = pieceGroup('bookRow', 0.52, 0.24, 0.28);
@@ -4599,36 +4504,7 @@ function makeLoveseat() {
 
 function makeCornerSofa() { return buildFurniture('cornerSofa', 2.62, 2.02, 0.86); }
 
-function makeFireplace() {
-  const g = pieceGroup('fireplace', 0.78, 0.54, 2.6);
-  const metal = new THREE.MeshStandardMaterial({ color: 0x1c1d20, roughness: 0.42, metalness: 0.72 });
-  /* 悬挂杆 + 顶盖 */
-  addCyl(g, 0.018, 0.018, 1.28, 0, 1.96, 0, metal, 8);
-  addCyl(g, 0.2, 0.2, 0.03, 0, 1.31, 0, metal, 18);
-  /* 圆筒炉身：横放，正面开口 */
-  const body = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.27, 0.62, 22, 1, true), metal);
-  body.rotation.z = Math.PI / 2;
-  body.position.set(0, 0.94, 0);
-  body.castShadow = true;
-  g.add(body);
-  /* 两端封板 */
-  for (const sx of [-0.31, 0.31]) {
-    addCyl(g, 0.27, 0.27, 0.02, sx, 0.94, 0, metal, 22).rotation.z = Math.PI / 2;
-  }
-  /* 炉膛里的火：几片朝向不同的小锥体，自发光 */
-  const flameMat = new THREE.MeshBasicMaterial({ color: 0xff8a2a, toneMapped: false });
-  const flameMat2 = new THREE.MeshBasicMaterial({ color: 0xffc65a, toneMapped: false });
-  for (const [fx, fz, s2, m] of [[-0.1, 0.02, 0.9, flameMat], [0.02, -0.03, 1.15, flameMat2], [0.12, 0.04, 0.8, flameMat]]) {
-    const f = new THREE.Mesh(new THREE.ConeGeometry(0.07 * s2, 0.2 * s2, 8), m);
-    f.position.set(fx, 0.86, fz);
-    g.add(f);
-  }
-  const fire = new THREE.PointLight(0xff8a3c, 0, 5.2 * MODEL_SCALE, 2);
-  fire.position.set(0, 0.94, 0);
-  g.add(fire);
-  g.userData.fire = fire;
-  return g;
-}
+function makeFireplace() { return buildFurniture('fireplace', 0.78, 0.54, 2.6); }
 
 /* 圣诞树（v7.3）：由 Blender 4.5 程序化生成，导出 GLB 后压成紧凑二进制。
    约 8670 顶点 / 31700 索引，含树皮、三层针叶、红金球、96 颗串灯、五角星。
@@ -4729,26 +4605,7 @@ function candleFlame(parent, x, y, z, s1 = 1) {
   return f;
 }
 
-function makeCandleCluster() {
-  const g = pieceGroup('candleCluster', 0.52, 0.52, 1.02);
-  /* 铜托盘 */
-  addCyl(g, 0.25, 0.26, 0.02, 0, 0.01, 0, aptBrassMat, 24);
-  /* 五支不同高度的柱蜡，位置错开 */
-  const set = [
-    [-0.11, 0.07, 0.62, 0.062], [0.03, -0.10, 0.44, 0.070],
-    [0.12, 0.06, 0.86, 0.056], [-0.02, 0.13, 0.30, 0.076],
-    [-0.15, -0.11, 0.50, 0.050],
-  ];
-  for (const [cx, cz, h, r] of set) {
-    addCyl(g, r, r, h, cx, h / 2 + 0.018, cz, waxMat, 16);
-    candleFlame(g, cx, h + 0.03, cz, r / 0.04);
-  }
-  const glow = new THREE.PointLight(0xffa860, 0, 4.2 * MODEL_SCALE, 2);
-  glow.position.set(0, 0.62, 0);
-  g.add(glow);
-  g.userData.candle = glow;
-  return g;
-}
+function makeCandleCluster() { return buildFurniture('candleCluster', 0.52, 0.52, 1.02); }
 
 function makeCandleStand() {
   const g = pieceGroup('candleStand', 0.3, 0.3, 1.26);
