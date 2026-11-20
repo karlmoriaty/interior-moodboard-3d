@@ -8,6 +8,7 @@ import { RoomEnvironment } from './vendor/RoomEnvironment.js';
 import { CITY_PHOTO_URL } from './city-photo.js';
 import { TREE_ASSET } from './tree-mesh.js';
 import { FOREST_BG } from './forest-bg.js';
+import { FURNITURE_ASSETS } from './furniture-assets.js';
 
 /* ============================== 0. 小工具 ============================== */
 const $ = (s) => document.querySelector(s);
@@ -401,6 +402,50 @@ const orbit = {
 /* 目标值：只有滚轮半径走阻尼；theta/phi 由拖拽直接同步。 */
 const orbitGoal = { radius: orbit.radius, theta: orbit.theta, phi: orbit.phi };
 const ORBIT_DEFAULT = { radius: 5.4, theta: 0.62, phi: 1.34 };
+
+/* v10：聚焦模型台。大房间里模型台只占画面一小块，细节根本看不见。
+   进入聚焦后把相机目标移到桌上模型台中心（世界坐标），半径收近，
+   并把房间边界约束关掉 —— 相机此时在桌面局部，不再受大房间四壁限制。 */
+let focusMode = false;
+const FOCUS_CAM = {
+  /* 世界坐标：模型台中心在桌面偏上。之前拍特写实测 y=0.45/r=2.1 正好占满画面 */
+  targetY: 0.45,
+  targetX: 0, targetZ: -1.1,
+  radius: 2.1, theta: 0.20, phi: 1.15,
+};
+const savedView = { target: null, radius: 0, theta: 0, phi: 0 };
+
+function setFocusMode(on) {
+  if (on === focusMode) return focusMode;
+  if (on) {
+    savedView.target = orbit.target.clone();
+    savedView.radius = orbit.radius;
+    savedView.theta = orbit.theta;
+    savedView.phi = orbit.phi;
+    orbit.target.set(FOCUS_CAM.targetX, FOCUS_CAM.targetY, FOCUS_CAM.targetZ);
+    orbit.radius = FOCUS_CAM.radius;
+    orbit.theta = FOCUS_CAM.theta;
+    orbit.phi = FOCUS_CAM.phi;
+    focusMode = true;
+  } else {
+    if (savedView.target) orbit.target.copy(savedView.target);
+    orbit.radius = savedView.radius;
+    orbit.theta = savedView.theta;
+    orbit.phi = savedView.phi;
+    focusMode = false;
+  }
+  orbit.pan.set(0, 0, 0);
+  orbit.panVel.set(0, 0, 0);
+  orbitGoal.radius = orbit.radius;
+  placeCamera();
+  const btn = document.getElementById('focus-btn');
+  if (btn) {
+    btn.classList.toggle('on', focusMode);
+    btn.textContent = focusMode ? '退出聚焦' : '聚焦模型台';
+    btn.setAttribute('aria-pressed', focusMode ? 'true' : 'false');
+  }
+  return focusMode;
+}
 /* 转动范围放宽并把默认视角放到中间：原来默认 0.33 距下限 0.16 只有 0.17 rad，
    往左一拖就撞墙，实测 120 px 拖动两次都卡在同一个边界上。
    相机在房间外时侧墙单面被背面剔除，放宽后仍能从更多角度看进去，不穿帮。 */
@@ -439,9 +484,13 @@ function placeCamera() {
   const ty = orbit.target.y + orbit.pan.y;
   const tz = orbit.target.z + orbit.pan.z;
   const sx = Math.sin(t), cz = Math.cos(t);
-  /* 水平半径：默认角度下不收缩（边界距离 > 5.25），取景保持不变；
-     转到后方/侧面时才按到墙的距离收紧，相机因此始终在房间内部。 */
+  /* 聚焦模型台时相机在桌面局部，不能再按大房间四壁收缩 */
   let hR = r * Math.sin(p);
+  if (focusMode) {
+    camera.position.set(tx + hR * sx, ty + r * Math.cos(p), tz + hR * cz);
+    camera.lookAt(tx, ty, tz);
+    return;
+  }
   const limX = ROOM_BOUNDS.halfW - WALL_MARGIN;
   const zHi = ROOM_BOUNDS.frontZ - WALL_MARGIN;
   const zLo = ROOM_BOUNDS.backZ + WALL_MARGIN;
@@ -3815,28 +3864,7 @@ function addCyl(parent, rt, rb, h, x, y, z, mat, seg = 14) {
   return m;
 }
 
-function makeSofa() {
-  const g = pieceGroup('sofa', 2.35, 0.95, 0.86);
-  const mat = surfaceMat.sofa;
-  const w = 2.35, d = 0.95;
-  /* 底座压低、坐垫与靠背分开，别再把沙发画成一块白砖 */
-  addBox(g, w, 0.18, d, 0, 0.22, 0, mat, 'sofa');
-  addBox(g, w, 0.52, 0.18, 0, 0.60, -d / 2 + 0.09, mat, 'sofa');
-  addBox(g, 0.16, 0.46, d, -w / 2 + 0.08, 0.53, 0, mat, 'sofa');
-  addBox(g, 0.16, 0.46, d, w / 2 - 0.08, 0.53, 0, mat, 'sofa');
-  for (const sx of [-1, 1]) {
-    addBox(g, (w - 0.36) / 2 - 0.025, 0.16, d - 0.22, sx * 0.49, 0.43, 0.03, mat, 'sofa');
-    const back = addBox(g, 0.78, 0.34, 0.13, sx * 0.52, 0.71, -d / 2 + 0.22, mat, 'sofa');
-    back.rotation.x = -0.10;
-  }
-  /* 一只赭色靠枕，一点对比就够 */
-  const pillow = addBox(g, 0.34, 0.30, 0.13, -0.66, 0.67, -0.22, accentMat);
-  pillow.rotation.z = 0.14;
-  /* 左扶手上搭一条薄毯 */
-  addBox(g, 0.40, 0.035, 0.56, -w / 2 + 0.08, 0.775, 0.12, throwMat);
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) addCyl(g, 0.024, 0.02, 0.13, sx * (w / 2 - 0.12), 0.075, sz * (d / 2 - 0.12), legMat, 10);
-  return g;
-}
+function makeSofa() { return buildFurniture('sofa', 2.35, 0.95, 0.86); }
 
 function makeArmchair() {
   const g = pieceGroup('armchair', 0.92, 0.88, 0.82);
@@ -3851,20 +3879,7 @@ function makeArmchair() {
   return g;
 }
 
-function makeCoffeeTable() {
-  const g = pieceGroup('coffeeTable', 1.32, 0.74, 0.4);
-  const mat = surfaceMat.woodwork;
-  addBox(g, 1.32, 0.055, 0.74, 0, 0.38, 0, mat, 'woodwork');
-  addBox(g, 1.2, 0.04, 0.62, 0, 0.16, 0, mat, 'woodwork');
-  for (const sx of [-1, 1]) for (const sz of [-1, 1]) addBox(g, 0.05, 0.36, 0.05, sx * 0.6, 0.18, sz * 0.31, legMat);
-  /* 桌面两本书 + 一只浅陶碗，尺度就出来了 */
-  addBox(g, 0.26, 0.026, 0.19, -0.30, 0.425, 0.10, bookInk);
-  addBox(g, 0.24, 0.022, 0.17, -0.28, 0.449, 0.09, bookRust);
-  addBox(g, 0.22, 0.004, 0.15, -0.28, 0.462, 0.09, paperMat);
-  const bowl = addCyl(g, 0.115, 0.075, 0.055, 0.30, 0.438, -0.08, ceramicMat, 24);
-  bowl.scale.y = 0.8;
-  return g;
-}
+function makeCoffeeTable() { return buildFurniture('coffeeTable', 1.42, 0.82, 0.5); }
 
 function makeSideTable() {
   const g = pieceGroup('sideTable', 0.44, 0.44, 0.5);
@@ -4019,6 +4034,66 @@ function makePendant() {
   bulb.position.set(0, 1.99, 0);
   g.add(bulb);
   g.userData.bulb = bulb;
+  return g;
+}
+
+/* ============================== 精细家具资产（v10） ==============================
+   Blender 程序化生成 → GLB → 紧凑二进制，四件：床 / 沙发 / 茶几 / 钢琴。
+   比原来的纯几何体多了倒角、软包分层、被褥和琴键细节。
+   ============================================================================ */
+let furnitureCache = null;
+function furnitureGeom(name) {
+  if (!furnitureCache) {
+    const raw = atob(FURNITURE_ASSETS.data);
+    const bytes = new Uint8Array(raw.length);
+    for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
+    const dv = new DataView(bytes.buffer);
+    const n = FURNITURE_ASSETS.names.length;
+    const stats = [];
+    let baseV = 0, baseI = 0;
+    for (let i = 0; i < n; i++) {
+      stats.push({ v: dv.getUint32(i * 8, true), idx: dv.getUint32(i * 8 + 4, true), vOff: baseV, iOff: baseI });
+      baseV += stats[i].v; baseI += stats[i].idx;
+    }
+    const posBase = n * 8;
+    const colBase = posBase + baseV * 12;
+    const idxBase = colBase + baseV * 4;
+    furnitureCache = { dv, stats, posBase, colBase, idxBase };
+  }
+  const C = furnitureCache;
+  const i = FURNITURE_ASSETS.names.indexOf(name);
+  if (i < 0) throw new Error('unknown furniture ' + name);
+  const st = C.stats[i];
+  const pos = new Float32Array(st.v * 3);
+  const col = new Float32Array(st.v * 3);
+  for (let k = 0; k < st.v * 3; k++) pos[k] = C.dv.getFloat32(C.posBase + (st.vOff * 3 + k) * 4, true);
+  for (let k = 0; k < st.v; k++) {
+    col[k * 3] = C.dv.getUint8(C.colBase + (st.vOff + k) * 4) / 255;
+    col[k * 3 + 1] = C.dv.getUint8(C.colBase + (st.vOff + k) * 4 + 1) / 255;
+    col[k * 3 + 2] = C.dv.getUint8(C.colBase + (st.vOff + k) * 4 + 2) / 255;
+  }
+  const idx = new Uint16Array(st.idx);
+  for (let k = 0; k < st.idx; k++) idx[k] = C.dv.getUint16(C.idxBase + (st.iOff + k) * 2, true);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setIndex(new THREE.BufferAttribute(idx, 1));
+  geo.computeVertexNormals();
+  return geo;
+}
+
+let furnitureMat = null;
+function buildFurniture(type, w, d, h) {
+  const g = pieceGroup(type, w, d, h);
+  if (!furnitureMat) {
+    furnitureMat = new THREE.MeshStandardMaterial({
+      vertexColors: true, roughness: 0.84, metalness: 0.05, side: THREE.DoubleSide,
+    });
+  }
+  const m = new THREE.Mesh(furnitureGeom(type), furnitureMat);
+  m.castShadow = true;
+  m.receiveShadow = true;
+  g.add(m);
   return g;
 }
 
@@ -4286,22 +4361,7 @@ function makeCandle() {
 
 /* ============================== 5.8 家具补充 ============================== */
 
-function makeBed() {
-  const g = pieceGroup('bed', 2.02, 1.52, 0.62);
-  const wood = surfaceMat.woodwork;
-  addBox(g, 2.02, 0.16, 1.52, 0, 0.3, 0, wood, 'woodwork');
-  for (const [x, z] of [[-0.92, -0.66], [0.92, -0.66], [-0.92, 0.66], [0.92, 0.66]]) {
-    addBox(g, 0.07, 0.22, 0.07, x, 0.11, z, wood, 'woodwork');
-  }
-  addBox(g, 1.92, 0.16, 1.42, 0, 0.46, 0, surfaceMat.sofa, 'sofa');   // 床垫
-  addBox(g, 2.02, 0.5, 0.09, 0, 0.55, -0.72, wood, 'woodwork');      // 床头板
-  /* 枕头两只 + 被子一角 */
-  for (const x of [-0.45, 0.45]) {
-    addBox(g, 0.5, 0.12, 0.3, x, 0.6, -0.48, paperMat);
-  }
-  addBox(g, 1.9, 0.1, 0.72, 0, 0.59, 0.32, throwMat);
-  return g;
-}
+function makeBed() { return buildFurniture('bed', 2.05, 1.55, 0.95); }
 
 function makeWardrobe() {
   const g = pieceGroup('wardrobe', 1.2, 0.58, 2.08);
@@ -4522,32 +4582,7 @@ function makeTree() {
   return g;
 }
 
-function makePiano() {
-  const g = pieceGroup('piano', 1.9, 1.35, 1.02);
-  const black = new THREE.MeshStandardMaterial({ color: 0x141416, roughness: 0.3, metalness: 0.28 });
-  const keys = new THREE.MeshStandardMaterial({ color: 0xe8e2d6, roughness: 0.6 });
-  /* 琴体：用一个平的楔形近似三角钢琴的弧线 */
-  const bodyMain = addBox(g, 1.5, 0.3, 1.02, -0.18, 0.72, -0.1, black);
-  bodyMain.rotation.y = 0.03;
-  const tail = addBox(g, 0.52, 0.28, 0.78, 0.82, 0.71, -0.06, black);
-  tail.rotation.y = -0.12;
-  /* 琴盖掀起来 */
-  const lid = addBox(g, 1.46, 0.03, 0.98, -0.18, 0.9, -0.12, black);
-  lid.rotation.set(-0.30, 0.03, 0);
-  /* 键盘：白键 + 黑键的节奏 */
-  addBox(g, 0.72, 0.07, 0.24, -0.86, 0.78, 0.12, keys);
-  for (let k = 0; k < 10; k++) {
-    if (k % 7 === 2 || k % 7 === 6) continue;
-    addBox(g, 0.028, 0.03, 0.13, -1.18 + k * 0.067, 0.815, 0.09, black);
-  }
-  /* 三条腿 + 谱架 */
-  for (const [lx, lz] of [[-1.05, 0.42], [-0.1, 0.48], [0.86, 0.3]]) {
-    addCyl(g, 0.035, 0.028, 0.66, lx, 0.33, lz, black, 10);
-  }
-  const stand = addBox(g, 0.7, 0.36, 0.02, -0.9, 1.02, -0.2, black);
-  stand.rotation.x = -0.25;
-  return g;
-}
+function makePiano() { return buildFurniture('piano', 1.9, 1.35, 1.02); }
 
 /* ---------- v7.1：烛光组 ---------- */
 /* 参考图的氛围一半来自蜡烛：茶几上、地上、边几上全是。
@@ -5748,6 +5783,18 @@ for (const b of $$('.mood')) {
 }
 
 /* 存图：走完整后处理，导出的图和屏幕上看到的一致 */
+document.getElementById('focus-btn').addEventListener('click', () => {
+  setFocusMode(!focusMode);
+  toast(focusMode ? '聚焦模型台：拖动画面细看' : '已返回全景');
+});
+/* F 键快速切换 */
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') {
+    if (e.target && /INPUT|TEXTAREA/.test(e.target.tagName)) return;
+    setFocusMode(!focusMode);
+  }
+});
+
 $('#shot').addEventListener('click', () => {
   renderFrame();
   const url = renderer.domElement.toDataURL('image/png');
