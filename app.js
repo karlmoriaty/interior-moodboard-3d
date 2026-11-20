@@ -373,7 +373,8 @@ const renderer = new THREE.WebGLRenderer({
   canvas: canvasEl, antialias: true, alpha: true, powerPreference: 'high-performance',
   preserveDrawingBuffer: true,
 });
-renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2));
+/* v11.0：上限提到 2.5，凑近看织物/木纹时不糊 */
+renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, 2.5));
 renderer.setSize(window.innerWidth, window.innerHeight, false);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
@@ -408,10 +409,10 @@ const ORBIT_DEFAULT = { radius: 5.4, theta: 0.62, phi: 1.34 };
    并把房间边界约束关掉 —— 相机此时在桌面局部，不再受大房间四壁限制。 */
 let focusMode = false;
 const FOCUS_CAM = {
-  /* 世界坐标：模型台中心在桌面偏上。之前拍特写实测 y=0.45/r=2.1 正好占满画面 */
-  targetY: 0.45,
+  /* v11.0：模型台放大到 0.22 后，半径按尺寸同比放大（0.17 时 2.1 → 2.75）。
+     目标高度不写死，由 MODEL_BASE_Y + 房高一半实时算。 */
   targetX: 0, targetZ: -1.1,
-  radius: 2.1, theta: 0.20, phi: 1.15,
+  radius: 2.75, theta: 0.22, phi: 1.22,
 };
 const savedView = { target: null, radius: 0, theta: 0, phi: 0 };
 
@@ -422,7 +423,7 @@ function setFocusMode(on) {
     savedView.radius = orbit.radius;
     savedView.theta = orbit.theta;
     savedView.phi = orbit.phi;
-    orbit.target.set(FOCUS_CAM.targetX, FOCUS_CAM.targetY, FOCUS_CAM.targetZ);
+    orbit.target.set(FOCUS_CAM.targetX, MODEL_BASE_Y + (ROOM_H * MODEL_SCALE) / 2, FOCUS_CAM.targetZ);
     orbit.radius = FOCUS_CAM.radius;
     orbit.theta = FOCUS_CAM.theta;
     orbit.phi = FOCUS_CAM.phi;
@@ -452,7 +453,9 @@ function setFocusMode(on) {
 /* 房间放大后滚轮要能退到看得见整面玻璃的距离 */
 /* 水平角放开到整圈。旧值 [0.02, 1.42] 只能看前方与左墙，
    转到右边/后方会撞边界。用角度归一化代替 clamp：连续拖拽跨 2π 时位置不跳。 */
-const PHI_RANGE = [0.32, 1.50], RADIUS_RANGE = [1.9, 9.5];
+/* v11.0：缩放范围扩大。原来 1.9 起步，凑近模型台就顶到边界；
+   现在允许 0.6（几乎贴脸看材质）到 16（退回看整间公寓）。 */
+const PHI_RANGE = [0.28, 1.52], RADIUS_RANGE = [0.6, 16];
 const TAU = Math.PI * 2;
 const wrapAngle = (a) => ((a % TAU) + TAU) % TAU;
 /* 相机必须留在房间内。房间 11.2 宽 × 10 深，窗墙 z=-4.9、后墙 z=5.1。
@@ -1059,7 +1062,10 @@ const INTERIOR = {
 
 /* 一层模型台的整体缩放：8×6×3 的"房间"缩成 1.52×1.14×0.57 的展示物
    （大型鱼缸 / 建筑模型那个量级），摆在桌上才成立。 */
-const MODEL_SCALE = 0.17;
+/* v11.0：模型台从 0.17 放大到 0.22。
+   原尺寸在 2.8×1.5 的桌面上只占 1.36×1.02，细节被压得太小；
+   0.22 后是 1.76×1.32，桌面仍留边，但每件家具在屏幕上大 29%。 */
+const MODEL_SCALE = 0.22;
 /* 缩放后点光源的强度要乘 s²、照射距离要乘 s，否则一盏 6 米远的灯会照亮整个公寓 */
 const MODEL_SCALE_SQ = MODEL_SCALE * MODEL_SCALE;
 
@@ -3315,13 +3321,15 @@ function buildSceneCafe() {
   const woodLight = new THREE.MeshStandardMaterial({ color: 0x5c4129, roughness: 0.78 });
   const black = new THREE.MeshStandardMaterial({ color: 0x141518, roughness: 0.5, metalness: 0.35 });
 
-  /* 深色木地板 + 木柱木梁 */
+  /* 深色木地板 + 木柱木梁。
+     v11.0：原来 3 道 0.18 厚的横梁横在视线高度，从剖口看进去全被挡住。
+     收到 2 道、贴顶、截面缩小，柱子也从 0.2 收到 0.13。 */
   box(W, T, D, 0, -T / 2, 0, surfaceMat.floor, false);
   for (const px of [X0 + 0.3, -0.4, X1 - 0.3]) {
-    box(0.2, H, 0.2, px, H / 2, Z0 + 0.3, wood);
+    box(0.13, H, 0.13, px, H / 2, Z0 + 0.3, wood);
   }
-  for (const pz of [Z0 + 0.3, 0.2, 2.8]) {
-    box(W, 0.18, 0.22, 0, H - 0.12, pz, wood);
+  for (const pz of [Z0 + 0.3, 0.2]) {
+    box(W, 0.11, 0.15, 0, H - 0.075, pz, wood);
   }
 
   /* 三扇拱形窗：下半矩形 + 上半半圆，木框 + 淡玻璃。
