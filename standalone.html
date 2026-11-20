@@ -59193,8 +59193,10 @@ function buildSceneForest() {
     ['sideTable', -1.35, -2.05, 0],
     ['sideTable', 2.55, -2.05, 0],
     ['lamp', 2.95, 0.55, 0],
-    ['plant', -2.35, -2.55, 0.2],
-    ['plant', 1.85, -2.62, -0.3],
+    /* v12.4：这两株原来挤在钢琴和床的后角，推开后又被边界夹回，
+       改成放在钢琴前方和床右侧的空地 */
+    ['plant', -2.95, -0.35, 0.2],
+    ['plant', 2.15, 0.75, -0.3],
     ['candle', -1.35, -2.35, 0],
     ['bookStack', 2.55, -2.35, 0.5],
   ];
@@ -59294,7 +59296,9 @@ function applySceneDefaults(meta) {
   state.mats = JSON.parse(JSON.stringify(meta.mats));
   applyStateMats();
   PIECES.clear();
-  for (const p of initialPieces) placePiece(...p);
+  /* v12.4：必须走 placeAt 而不是 placePiece ——
+     后者只把 group 塞进场景，绕过边界夹取和碰撞避让 */
+  for (const p of initialPieces) placeAt(...p);
   state.hour = meta.hour;
   setHour(meta.hour, true);
 }
@@ -59307,7 +59311,7 @@ function applySceneSnapshot(snap) {
   for (const [type, x, z, r] of snap.pieces) {
     /* 旧存档里可能混着 NaN 坐标，跳过坏记录而不是让整个场景坐标失效 */
     if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
-    placePiece(type, x, z, Number.isFinite(r) ? r : 0);
+    placeAt(type, x, z, Number.isFinite(r) ? r : 0);
   };
   state.hour = snap.hour;
   setHour(snap.hour, true);
@@ -60158,6 +60162,58 @@ function hasGlassRoof() {
 }
 const PLACE_BLOCKED = { pendantNoRoof: '吊灯需要玻璃顶：先在结构里放一块玻璃顶' };
 
+/* ============================== 物理避让（v12.4） ==============================
+   原来放置只夹边界，不管物件之间会不会插在一起。
+   实测四套场景有 8 处重叠：茶几插单椅、烛台穿茶几、琴凳插钢琴、床压绿植。
+   这里加一层轴对齐包围盒的推开：沿重叠较小的轴推，推完再夹边界，
+   最多迭代 12 次。地毯和玻璃顶不参与（它们本来就该被压）。
+   ============================================================================ */
+const NO_COLLIDE = new Set(['rugSmall', 'glassRoof']);
+
+function aabbOf(obj) {
+  return new THREE.Box3().setFromObject(obj);
+}
+
+function resolveCollisions(g, maxIter = 20) {
+  const p = g.userData.piece;
+  if (!p || NO_COLLIDE.has(p.type)) return 0;
+  /* 刚 add 进场景的 group 世界矩阵还是旧的，setFromObject 会量到错误位置。
+     必须先强制更新，否则整个避让等于没跑。 */
+  /* updateMatrixWorld 不会更新父级（MODEL 有 0.22 缩放），
+     必须用 updateWorldMatrix(true, true) 才会连父链一起算 */
+  PIECES.updateWorldMatrix(true, true);
+  let pushed = 0;
+  for (let iter = 0; iter < maxIter; iter++) {
+    const cur = aabbOf(g);
+    let moved = false;
+    for (const other of PIECES.children) {
+      if (other === g) continue;
+      const op = other.userData.piece;
+      if (!op || NO_COLLIDE.has(op.type)) continue;
+      const ob = aabbOf(other);
+      const ox = Math.min(cur.max.x, ob.max.x) - Math.max(cur.min.x, ob.min.x);
+      const oz = Math.min(cur.max.z, ob.max.z) - Math.max(cur.min.z, ob.min.z);
+      const oy = Math.min(cur.max.y, ob.max.y) - Math.max(cur.min.y, ob.min.y);
+      if (ox <= 0.02 || oz <= 0.02 || oy <= 0.02) continue;
+      /* 沿重叠小的轴推，位移最短 */
+      if (ox <= oz) {
+        g.position.x += (g.position.x >= other.position.x ? 1 : -1) * (ox + 0.06);
+      } else {
+        g.position.z += (g.position.z >= other.position.z ? 1 : -1) * (oz + 0.06);
+      }
+      moved = true;
+      pushed++;
+      break;
+    }
+    if (!moved) break;
+    const [cx, cz] = clampPos(g, g.position.x, g.position.z);
+    g.position.x = cx;
+    g.position.z = cz;
+    g.updateWorldMatrix(true, false);
+  }
+  return pushed;
+}
+
 function placeAt(type, x, z, rot) {
   /* 非有限坐标会导致物件位置变 NaN：直接拒绝，不进场景也不进历史 */
   if (!Number.isFinite(x) || !Number.isFinite(z)) {
@@ -60173,6 +60229,8 @@ function placeAt(type, x, z, rot) {
   if (!g) return null;
   const [cx, cz] = clampPos(g, x, z);
   g.position.set(cx, 0, cz);
+  /* 放进场景后先解决与已有物件的穿插，再夹一次边界 */
+  resolveCollisions(g);
   /* 玻璃顶没有依附对象（它是天花板），吊灯依赖它 —— 反向不需要级联：
      撤销/重做会整表重建，顺序天然正确。 */
   return g;
@@ -61102,7 +61160,7 @@ function restore(snap) {
   state.mats = s.mats;
   applyStateMats();
   PIECES.clear();
-  for (const p of s.pieces) placePiece(p.type, p.x, p.z, p.r);
+  for (const p of s.pieces) placeAt(p.type, p.x, p.z, p.r);
   setHour(s.hour, true);
   paintSlots();
   refreshCards();
@@ -61250,7 +61308,7 @@ $('#reset').addEventListener('click', () => {
   };
   applyStateMats();
   PIECES.clear();
-  for (const p of initialPieces) placePiece(...p);
+  for (const p of initialPieces) placeAt(...p);
   setHour(18.5, true);
   paintSlots();
   refreshCards();
