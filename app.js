@@ -467,7 +467,8 @@ renderer.setSize(window.innerWidth, window.innerHeight, false);
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 renderer.toneMapping = THREE.ACESFilmicToneMapping;
-renderer.toneMappingExposure = 1.02;
+/* v12.2：1.02 会把米色织物照成纯白，压到 0.92 才留得住暗部 */
+renderer.toneMappingExposure = 0.72;
 renderer.outputColorSpace = THREE.SRGBColorSpace;
 renderer.setClearColor(0x000000, 0);
 
@@ -3222,9 +3223,11 @@ function buildSceneWarm() {
   cove.position.set(0, H - 0.07, Z0 + 0.075);
   room.add(cove);
   /* 灯在模型组里：距离是世界单位，必须乘上缩放，否则一盏 6.5 m 的灯会照亮整个公寓 */
-  coveLight = new THREE.PointLight(0xffc08a, 2.4, 6.5 * MODEL_SCALE, 2);
+  coveLight = new THREE.PointLight(0xffc08a, 1.3, 6.5 * MODEL_SCALE, 2);
   coveLight.position.set(0.4, H - 0.28, Z0 + 0.42);
   room.add(coveLight);
+  /* v12.2 主光：从落地窗斜照进来，让沙发/茶几/壁炉互相遮挡 */
+  addSceneKeyLight((m) => room.add(m), { color: 0xffd2a2, intensity: 2.0, x: 0.6, y: 2.7, z: -2.4 });
   
   /* 后墙被灯照亮的一小片：假光，但比再开一个点光源便宜也柔和 */
   wallGlow = new THREE.Mesh(
@@ -3374,8 +3377,10 @@ function buildSceneWarm() {
     name: '暖光客厅',
     hour: 18.6,
     mats: {
-      floor: ['wood', 'oak'], wallBack: ['paint', 'ash'], wallSide: ['paint', 'ash'],
-      sofa: ['fabric', 'linen'], rug: ['fabric', 'boucle'], woodwork: ['wood', 'walnut'],
+      /* v12.2：地板从最浅的 oak 换柚木 —— 浅木 + 白地毯 + 米色沙发全是最亮的，
+         叠在一起过曝，看着像塑料积木。参考图是中深木地板压住整体 */
+      floor: ['wood', 'smoked'], wallBack: ['paint', 'ash'], wallSide: ['paint', 'ash'],
+      sofa: ['fabric', 'tweed'], rug: ['fabric', 'tweed'], woodwork: ['wood', 'walnut'],
     },
   };
 }
@@ -3384,6 +3389,26 @@ function buildSceneWarm() {
    四套场景是四个真正不同的房间：各自的墙窗结构、各自的家具、各自的灯光。
    不再用"同一个房间换颜色"糊弄。
    ============================================================================== */
+
+/* v12.2：场景主光必须投影。
+   原来每个场景只有不投影的点光源，家具之间没有互相遮挡的暗部，
+   所以画面永远「平」。给小尺度的模型台配一盏带阴影的聚光灯：
+   mapSize 512 就够（模型台只有 1.8 米），penumbra 拉满得到软边。 */
+function addSceneKeyLight(put, opts) {
+  const { color = 0xffd9b0, intensity = 2.6, x = 0, y = 2.4, z = -2.2, dist = 6, angle = 1.15 } = opts || {};
+  const key = new THREE.SpotLight(color, intensity, dist, angle, 1.0, 1.6);
+  key.position.set(x, y, z);
+  key.target.position.set(x, 0, z + 1.6);
+  put(key);
+  put(key.target);
+  key.castShadow = true;
+  key.shadow.mapSize.set(512, 512);
+  key.shadow.camera.near = 0.1;
+  key.shadow.camera.far = 6;
+  key.shadow.bias = -0.0012;
+  key.shadow.radius = 4;
+  return key;
+}
 
 /* ---- 公共：重置材质槽与房间 group ---- */
 function sceneBootstrap() {
@@ -3513,6 +3538,7 @@ function buildSceneCafe() {
   coveLight = new THREE.PointLight(0xffcf94, 0, 5 * MODEL_SCALE, 2);
   coveLight.position.set(-0.2, 2.35, -0.7);
   put(coveLight);
+  addSceneKeyLight(put, { color: 0xffd8b4, intensity: 2.4, x: -0.2, y: 2.6, z: -2.3 });
   wallGlow = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), new THREE.MeshBasicMaterial({ color: 0xffc98a, transparent: true, opacity: 0, depthWrite: false }));
   wallGlow.position.set(X0 + 0.02, 1.5, -1.4);
   wallGlow.rotation.y = Math.PI / 2;
@@ -3631,6 +3657,7 @@ function buildSceneNight() {
   coveLight = new THREE.PointLight(0xffbc78, 0, 5 * MODEL_SCALE, 2);
   coveLight.position.set(-0.2, 2.5, 0.2);
   put(coveLight);
+  addSceneKeyLight(put, { color: 0x8fb7e8, intensity: 1.5, x: -0.4, y: 2.6, z: -2.5 });
   wallGlow = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), new THREE.MeshBasicMaterial({ color: 0xffa860, transparent: true, opacity: 0, depthWrite: false }));
   wallGlow.position.set(X0 + 0.02, 1.5, 0.4);
   wallGlow.rotation.y = Math.PI / 2;
@@ -3723,6 +3750,7 @@ function buildSceneForest() {
   coveLight = new THREE.PointLight(0xffe0b8, 0, 5.2 * MODEL_SCALE, 2);
   coveLight.position.set(0.2, H - 0.45, -0.6);
   put(coveLight);
+  addSceneKeyLight(put, { color: 0xd8e6ea, intensity: 2.0, x: 0.2, y: 2.7, z: -2.4 });
   wallGlow = new THREE.Mesh(new THREE.PlaneGeometry(3.2, 2.2), new THREE.MeshBasicMaterial({ color: 0xffd9a8, transparent: true, opacity: 0, depthWrite: false }));
   wallGlow.position.set(X0 + 0.02, 1.5, -0.4);
   wallGlow.rotation.y = Math.PI / 2;
@@ -4569,35 +4597,7 @@ function makeLoveseat() {
 /* 四件：L 形转角沙发、悬挂圆筒壁炉、圣诞树、三角钢琴。
    按参考图做的，都接进同一套拖放 / 边界 / 编码逻辑。 */
 
-function makeCornerSofa() {
-  const g = pieceGroup('cornerSofa', 2.62, 2.02, 0.86);
-  const mat = surfaceMat.sofa;
-  const w = 2.62, d = 2.02, aw = 0.95;
-  /* 长边沿 x（靠后），短边沿 z（靠左）—— L 形的两个臂 */
-  addBox(g, w, 0.18, aw, 0, 0.22, -d / 2 + aw / 2, mat, 'sofa');
-  addBox(g, w, 0.50, 0.16, 0, 0.60, -d / 2 + 0.08, mat, 'sofa');
-  addBox(g, aw, 0.18, d - aw, -w / 2 + aw / 2, 0.22, aw / 2, mat, 'sofa');
-  addBox(g, 0.16, 0.50, d - aw, -w / 2 + 0.08, 0.60, aw / 2, mat, 'sofa');
-  /* 外侧扶手段 */
-  addBox(g, 0.16, 0.46, aw, w / 2 - 0.08, 0.53, -d / 2 + aw / 2, mat, 'sofa');
-  addBox(g, aw, 0.46, 0.16, -w / 2 + aw / 2, 0.53, d / 2 - 0.08, mat, 'sofa');
-  /* 坐垫：长边两块 + 短边一块 */
-  for (const sx of [-0.52, 0.62]) {
-    addBox(g, 1.1, 0.17, aw - 0.24, sx, 0.44, -d / 2 + aw / 2 + 0.05, mat, 'sofa');
-  }
-  addBox(g, aw - 0.24, 0.17, 0.78, -w / 2 + aw / 2 + 0.05, 0.44, aw / 2 + 0.1, mat, 'sofa');
-  /* 靠枕 + 一条搭毯 */
-  for (const [px, pz, rot] of [[-0.92, -d / 2 + 0.3, 0.12], [0.42, -d / 2 + 0.3, -0.1]]) {
-    const p = addBox(g, 0.36, 0.32, 0.14, px, 0.70, pz, accentMat);
-    p.rotation.z = rot;
-  }
-  addBox(g, 0.42, 0.035, 0.62, -w / 2 + aw / 2, 0.79, 1.0, throwMat);
-  for (const [lx, lz] of [[-w / 2 + 0.12, -d / 2 + 0.12], [w / 2 - 0.12, -d / 2 + 0.12],
-    [-w / 2 + 0.12, d / 2 - 0.12], [-0.2, -d / 2 + 0.12]]) {
-    addCyl(g, 0.024, 0.02, 0.13, lx, 0.075, lz, legMat, 10);
-  }
-  return g;
-}
+function makeCornerSofa() { return buildFurniture('cornerSofa', 2.62, 2.02, 0.86); }
 
 function makeFireplace() {
   const g = pieceGroup('fireplace', 0.78, 0.54, 2.6);
