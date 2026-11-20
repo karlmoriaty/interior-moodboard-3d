@@ -4204,10 +4204,14 @@ let furnitureMat = null;
 function buildFurniture(type, w, d, h) {
   const g = pieceGroup(type, w, d, h);
   if (!furnitureMat) {
-    furnitureMat = new THREE.MeshStandardMaterial({
-      vertexColors: true, roughness: 0.84, metalness: 0.05, side: THREE.DoubleSide,
-      /* v11.1：加编织凹凸，表面不再是一块光滑的塑料 */
-      bumpMap: weaveBump(6), bumpScale: 0.012,
+    /* v12.1：换 MeshPhysicalMaterial —— 织物需要 sheen（绒面反射），
+       Standard 材质做不出来。AO 已在 Blender 里烘进顶点色（颜色已乘过暗部），
+       这里再加一点 sheen 和凹凸，才接近 Cycles 那张对比图的质感。 */
+    furnitureMat = new THREE.MeshPhysicalMaterial({
+      vertexColors: true, roughness: 0.88, metalness: 0.02,
+      sheen: 0.55, sheenRoughness: 0.75, sheenColor: new THREE.Color(0xfff3e4),
+      bumpMap: weaveBump(8), bumpScale: 0.02,
+      side: THREE.DoubleSide, envMapIntensity: 0.7,
     });
   }
   const m = new THREE.Mesh(furnitureGeom(type), furnitureMat);
