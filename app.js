@@ -315,6 +315,94 @@ function drawFabric(m) {
   return c;
 }
 
+/* ============================== 凹凸贴图（v11.1） ==============================
+   家具看起来像塑料，根因不是颜色而是「表面完全平」。
+   给材质加 bumpMap（灰度高度图）就能出编织、木纹、灰泥的起伏。
+   用灰度而不是 normalMap：不用逐像素编码法线，生成快、体积小。
+   ============================================================================ */
+const bumpCache = new Map();
+
+/* 织物：经纬交织的斜纹，纱线有粗细节奏 */
+function weaveBump(rep = 1) {
+  const key = 'weave' + rep;
+  if (bumpCache.has(key)) return bumpCache.get(key);
+  const S = 256, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  g.fillStyle = '#808080';
+  g.fillRect(0, 0, S, S);
+  const step = 8;
+  for (let y = 0; y < S; y += step) {
+    for (let x = 0; x < S; x += step) {
+      const over = ((x / step + y / step) | 0) % 2 === 0;
+      const v = over ? 178 : 120;
+      g.fillStyle = 'rgb(' + v + ',' + v + ',' + v + ')';
+      if (over) g.fillRect(x, y, step - 1, step - 1);
+      else g.fillRect(x + 1, y + 1, step - 2, step - 2);
+    }
+  }
+  /* 纱线上的细噪点：纯方格太规整 */
+  const img = g.getImageData(0, 0, S, S);
+  for (let k = 0; k < img.data.length; k += 4) {
+    const n = (Math.random() - 0.5) * 22;
+    img.data[k] += n; img.data[k + 1] += n; img.data[k + 2] += n;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rep, rep);
+  bumpCache.set(key, t);
+  return t;
+}
+
+/* 木材：顺纹的细长起伏，偶尔一道深沟 */
+function woodBump(rep = 2) {
+  const key = 'wood' + rep;
+  if (bumpCache.has(key)) return bumpCache.get(key);
+  const W = 256, H = 256, c = document.createElement('canvas');
+  c.width = W; c.height = H;
+  const g = c.getContext('2d');
+  g.fillStyle = '#808080';
+  g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 130; i++) {
+    const y = Math.random() * H;
+    const v = 108 + Math.random() * 44;
+    g.strokeStyle = 'rgba(' + v + ',' + v + ',' + v + ',0.85)';
+    g.lineWidth = 0.6 + Math.random() * 2.4;
+    g.beginPath();
+    g.moveTo(0, y);
+    for (let x = 0; x <= W; x += 16) g.lineTo(x, y + Math.sin(x * 0.02 + i) * 2.2);
+    g.stroke();
+  }
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rep, rep);
+  bumpCache.set(key, t);
+  return t;
+}
+
+/* 灰泥墙面：细密颗粒 */
+function plasterBump(rep = 3) {
+  const key = 'plaster' + rep;
+  if (bumpCache.has(key)) return bumpCache.get(key);
+  const S = 256, c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  for (let k = 0; k < img.data.length; k += 4) {
+    /* 两层：粗颗粒 + 细颗粒 */
+    const v = 128 + (Math.random() - 0.5) * 26 + (Math.random() - 0.5) * 14;
+    img.data[k] = img.data[k + 1] = img.data[k + 2] = v;
+    img.data[k + 3] = 255;
+  }
+  g.putImageData(img, 0, 0);
+  const t = new THREE.CanvasTexture(c);
+  t.wrapS = t.wrapT = THREE.RepeatWrapping;
+  t.repeat.set(rep, rep);
+  bumpCache.set(key, t);
+  return t;
+}
+
 function drawPaint(m) {
   const S = 256, c = document.createElement('canvas');
   c.width = c.height = S;
@@ -501,7 +589,10 @@ function placeCamera() {
   else if (sx < -1e-4) hR = Math.min(hR, (-limX - tx) / sx);
   if (cz > 1e-4) hR = Math.min(hR, (zHi - tz) / cz);
   else if (cz < -1e-4) hR = Math.min(hR, (zLo - tz) / cz);
-  hR = Math.max(1.2, hR);
+  /* v11.1：这个下限原来是 1.2 米，把 RADIUS_RANGE 的 0.6 完全卡死 ——
+     用户滚轮想贴近看材质，实际到 1.2 就不动了。
+     放到 0.25：允许几乎贴到模型台面上，同时仍留一点余量避免穿进墙里。 */
+  hR = Math.max(0.25, hR);
   camera.position.set(
     tx + hR * sx,
     ty + r * Math.cos(p),
@@ -4061,16 +4152,23 @@ function furnitureGeom(name) {
     for (let i = 0; i < raw.length; i++) bytes[i] = raw.charCodeAt(i);
     const dv = new DataView(bytes.buffer);
     const n = FURNITURE_ASSETS.names.length;
+    /* v11.1 头：每件 3 个 u32 = [顶点数, 索引数, 有无 UV] */
     const stats = [];
     let baseV = 0, baseI = 0;
     for (let i = 0; i < n; i++) {
-      stats.push({ v: dv.getUint32(i * 8, true), idx: dv.getUint32(i * 8 + 4, true), vOff: baseV, iOff: baseI });
+      stats.push({
+        v: dv.getUint32(i * 12, true),
+        idx: dv.getUint32(i * 12 + 4, true),
+        hasUV: dv.getUint32(i * 12 + 8, true) === 1,
+        vOff: baseV, iOff: baseI,
+      });
       baseV += stats[i].v; baseI += stats[i].idx;
     }
-    const posBase = n * 8;
+    const posBase = n * 12;
     const colBase = posBase + baseV * 12;
-    const idxBase = colBase + baseV * 4;
-    furnitureCache = { dv, stats, posBase, colBase, idxBase };
+    const uvBase = colBase + baseV * 4;
+    const idxBase = uvBase + baseV * 4;
+    furnitureCache = { dv, stats, posBase, colBase, uvBase, idxBase };
   }
   const C = furnitureCache;
   const i = FURNITURE_ASSETS.names.indexOf(name);
@@ -4089,6 +4187,14 @@ function furnitureGeom(name) {
   const geo = new THREE.BufferGeometry();
   geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  /* UV：u16 归一化还原到 0–1，bumpMap 才有地方贴 */
+  if (st.hasUV) {
+    const uv = new Float32Array(st.v * 2);
+    for (let k = 0; k < st.v * 2; k++) {
+      uv[k] = C.dv.getUint16(C.uvBase + (st.vOff * 2 + k) * 2, true) / 65535;
+    }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+  }
   geo.setIndex(new THREE.BufferAttribute(idx, 1));
   geo.computeVertexNormals();
   return geo;
@@ -4100,6 +4206,8 @@ function buildFurniture(type, w, d, h) {
   if (!furnitureMat) {
     furnitureMat = new THREE.MeshStandardMaterial({
       vertexColors: true, roughness: 0.84, metalness: 0.05, side: THREE.DoubleSide,
+      /* v11.1：加编织凹凸，表面不再是一块光滑的塑料 */
+      bumpMap: weaveBump(6), bumpScale: 0.012,
     });
   }
   const m = new THREE.Mesh(furnitureGeom(type), furnitureMat);
@@ -6692,6 +6800,7 @@ if (location.search.includes('probe')) {
   window.__lights = { sun, hemi, bounce, windowFill, rimCool, duskSpill, renderer, scene };
   window.__viewTex = viewTex;
   window.__orbit = orbit;
+  window.__orbitGoal = orbitGoal;
   window.__placeCamera = placeCamera;
   window.__placeAt = (t,x,z,r) => placeAt(t,x,z,r);
   window.__syncPieces = syncPieces;
