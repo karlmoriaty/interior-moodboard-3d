@@ -59176,7 +59176,11 @@ function applySceneSnapshot(snap) {
   state.mats = JSON.parse(JSON.stringify(snap.mats));
   applyStateMats();
   PIECES.clear();
-  for (const [type, x, z, r] of snap.pieces) placePiece(type, x, z, r);
+  for (const [type, x, z, r] of snap.pieces) {
+    /* 旧存档里可能混着 NaN 坐标，跳过坏记录而不是让整个场景坐标失效 */
+    if (!Number.isFinite(x) || !Number.isFinite(z)) continue;
+    placePiece(type, x, z, Number.isFinite(r) ? r : 0);
+  };
   state.hour = snap.hour;
   setHour(snap.hour, true);
 }
@@ -60159,9 +60163,13 @@ function footprint(g) {
 }
 function clampPos(g, x, z) {
   const { hx, hz } = footprint(g);
+  /* clamp 用的是比较式：NaN < a 与 NaN > b 都为 false，会原样返回 NaN。
+     NaN 坐标会让物件从场景消失，并污染快照与分享码，必须在入口拦下。 */
+  const sx = Number.isFinite(x) ? x : 0;
+  const sz = Number.isFinite(z) ? z : 0;
   return [
-    clamp(Math.round(x * 10) / 10, RB_X0 + hx, RB_X1 - hx),
-    clamp(Math.round(z * 10) / 10, RB_Z0 + hz, RB_Z1 - hz),
+    clamp(Math.round(sx * 10) / 10, RB_X0 + hx, RB_X1 - hx),
+    clamp(Math.round(sz * 10) / 10, RB_Z0 + hz, RB_Z1 - hz),
   ];
 }
 let lastPlaceError = null;
@@ -60173,6 +60181,11 @@ function hasGlassRoof() {
 const PLACE_BLOCKED = { pendantNoRoof: '吊灯需要玻璃顶：先在结构里放一块玻璃顶' };
 
 function placeAt(type, x, z, rot) {
+  /* 非有限坐标会导致物件位置变 NaN：直接拒绝，不进场景也不进历史 */
+  if (!Number.isFinite(x) || !Number.isFinite(z)) {
+    lastPlaceError = '坐标无效';
+    return null;
+  }
   if (type === 'pendant' && !hasGlassRoof()) {
     lastPlaceError = PLACE_BLOCKED.pendantNoRoof;
     return null;
