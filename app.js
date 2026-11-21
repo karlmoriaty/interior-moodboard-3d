@@ -3439,7 +3439,7 @@ function sceneBootstrap() {
    默认显示；点「切回 3D」可回到可拖材料的程序化房间。
    ───────────────────────────────────────────── */
 let nightPreviewMesh = null;
-let nightPreviewOn = true;   /* 切到夜景公寓时默认开写实预览 */
+let nightPreviewOn = true;   /* v12.4.7：默认写实渲染图 —— 3D 空壳凑近看太糙 */
 
 /* 这张平面放在房间开口外侧（朝相机 +Z），正对聚焦视角。
    房间在模型坐标里 8 宽 × 3 高，剖面开口在 Z1=+3。 */
@@ -3455,10 +3455,12 @@ function makeNightPreview(put) {
   /* 铺满整个房间断面 8×3：图是完整房间画面，就该占满剖面，
      缩在后面只露一小块等于没放。渲染图比例 1.70，房间 8/3=2.67，
      按宽度 7.6 撑满、高 4.5（略超出，靠相机裁切），视觉上占满模型台。 */
-  const w = 7.6, h = w * 880 / 1500;
+  /* v12.4.7：图缩小到能完整入镜 —— 原来 7.6×4.46 太大，
+     聚焦相机只能看到局部（下半全是地板）。房间 8×3，图高 2.6、宽 4.4 合适。 */
+  const h = 2.6, w = h * 1500 / 880;
   const geo = new THREE.PlaneGeometry(w, h);
   nightPreviewMesh = new THREE.Mesh(geo, mat);
-  nightPreviewMesh.position.set(0, 2.28, -1.2);
+  nightPreviewMesh.position.set(0, 1.48, -1.9);
   nightPreviewMesh.visible = nightPreviewOn;
   put(nightPreviewMesh);
   applyNightPreviewMode();
@@ -3867,8 +3869,9 @@ function buildSceneNight() {
   /* v12.4.6：真正的 3D 场景几何（替代原来的贴平面图）。
      Blender 建的床/窗/书架/城市全部是 3D 网格，可旋转、有深度。 */
   makeNight3D(put);
-  /* 写实预览图默认关闭；只有点「看写实预览图」才显示 */
-  nightPreviewOn = false;
+  /* v12.4.7：默认显示写实渲染图（完整、写实）；
+     3D 空壳几何作为可选结构模式，由按钮切换。 */
+  nightPreviewOn = true;
   makeNightPreview(put);
 
   return {
@@ -4089,7 +4092,7 @@ function applySceneSnapshot(snap) {
 /* 场景切换器的渲染：每个场景一张卡，选中态高亮 */
 function syncNightPreviewLabel() {
   const pv = document.getElementById('night-preview-toggle');
-  if (pv) pv.textContent = nightPreviewOn ? '切回 3D 编辑' : '看写实预览图';
+  if (pv) pv.textContent = nightPreviewOn ? '看 3D 结构' : '看写实渲染图';
 }
 
 function renderSceneTabs() {
@@ -4127,7 +4130,7 @@ function renderSceneTabs() {
       if (nightPreviewMesh) nightPreviewMesh.visible = nightPreviewOn;
       applyNightPreviewMode();
       syncNightPreviewLabel();
-      toast(nightPreviewOn ? '已切到写实预览（Blender 渲染图）' : '已切回 3D 编辑，可拖动材料');
+      toast(nightPreviewOn ? '已切到写实渲染图（Blender Cycles）' : '已切到 3D 结构模式');
     });
     host.after(pv);
   }
@@ -4388,12 +4391,12 @@ function decodeNightScene() {
   /* Blender 场景刻意用了极暗材质（墙 0.02 / 地 0.05），
      直接搬到 Three.js 会黑成一团。做一次 gamma 0.55 提升，
      把暗部抬到能看清结构，同时保留夜景的暗调氛围。 */
-  /* 顶点色来自 Blender 材质基色，温和提亮（0.1 + 0.9×c），
-     让暗调夜景在模型台尺度下仍看得出墙/床/地板区分。 */
+  /* 顶点色已含 Blender 烘的 AO（墙角/床下变暗），直接用即可。
+     不再额外提亮 —— 夜景本就该暗，强对比才有夜的感觉。 */
   for (let i = 0; i < vCount; i++) {
-    c01[i * 3] = Math.min(1, 0.10 + (col[i * 4] / 255) * 0.90);
-    c01[i * 3 + 1] = Math.min(1, 0.10 + (col[i * 4 + 1] / 255) * 0.90);
-    c01[i * 3 + 2] = Math.min(1, 0.10 + (col[i * 4 + 2] / 255) * 0.90);
+    c01[i * 3] = col[i * 4] / 255;
+    c01[i * 3 + 1] = col[i * 4 + 1] / 255;
+    c01[i * 3 + 2] = col[i * 4 + 2] / 255;
   }
   g.setAttribute('color', new THREE.BufferAttribute(c01, 3));
   g.setIndex(new THREE.BufferAttribute(idxArr, 1));
