@@ -9,6 +9,7 @@ import { CITY_PHOTO_URL } from './city-photo.js';
 import { TREE_ASSET } from './tree-mesh.js';
 import { FOREST_BG } from './forest-bg.js';
 import { FURNITURE_ASSETS } from './furniture-assets.js';
+import { CAFE_GARDEN } from './cafe-garden.js';
 
 /* ============================== 0. 小工具 ============================== */
 const $ = (s) => document.querySelector(s);
@@ -3372,8 +3373,6 @@ function buildSceneWarm() {
     ['plant', 0.90, -2.70, 0.3],
   ];
 
-  addBackdrop((m) => room.add(m), W, D, H, surfaceMat.wallBack);
-
   return {
     id: 'warm',
     name: '暖光客厅',
@@ -3396,23 +3395,6 @@ function buildSceneWarm() {
    原来每个场景只有不投影的点光源，家具之间没有互相遮挡的暗部，
    所以画面永远「平」。给小尺度的模型台配一盏带阴影的聚光灯：
    mapSize 512 就够（模型台只有 1.8 米），penumbra 拉满得到软边。 */
-/* v12.4.1：剖开的模型台会把公寓自己的城市背景露进来，
-   表现为天花板上一块黑色斜板。给房间加一块顶棚和一块后挡板，
-   把外面隔掉；夜景公寓的窗外照片在更里面一层，不受影响。 */
-function addBackdrop(put, W, D, H, wallMat) {
-  /* 顶棚只盖房间后半（z>0）：前部是窗，盖住会把窗外城市也挡掉 */
-  const top = new THREE.Mesh(new THREE.PlaneGeometry(W, D * 0.62),
-    new THREE.MeshStandardMaterial({ color: 0x20211f, roughness: 0.95, side: THREE.DoubleSide }));
-  top.rotation.x = Math.PI / 2;
-  top.position.set(0, H + 0.02, D * 0.19);
-  put(top);
-  /* 后挡板放在房间外侧，只挡公寓背景，不挡房间自己的窗 */
-  const back = new THREE.Mesh(new THREE.PlaneGeometry(W, H), wallMat);
-  back.rotation.x = Math.PI;
-  back.position.set(0, H / 2, D / 2 + 0.02);
-  put(back);
-}
-
 function addSceneKeyLight(put, opts) {
   const { color = 0xffd9b0, intensity = 2.6, x = 0, y = 2.4, z = -2.2, dist = 6, angle = 1.15 } = opts || {};
   const key = new THREE.SpotLight(color, intensity, dist, angle, 1.0, 1.6);
@@ -3583,24 +3565,19 @@ function buildSceneCafe() {
   windowCast.position.set(0, 0.018, -1.9);
   put(windowCast);
   /* 窗外花园：程序化天空 + 树影，不要露出公寓自己的城市夜景 */
+  /* v12.4.2：原来这里是 canvas 画的「渐变 + 22 个三角树 + 40 个粉点」，
+     放大看就是一块绿色荧幕，和室内的暖光完全不在一个世界。
+     换成 Blender 渲染的雾中花园：前景粉紫花丛、深绿灌木、
+     远处木屋暖光窗、薄雾 + 强景深虚化（f/0.55），几何感被虚化吃掉。 */
   const gardenTex = (() => {
-    const c = document.createElement('canvas'); c.width = 512; c.height = 320;
-    const g = c.getContext('2d');
-    const sky = g.createLinearGradient(0, 0, 0, 320);
-    sky.addColorStop(0, '#6b7d68'); sky.addColorStop(0.5, '#889580'); sky.addColorStop(1, '#5a6b52');
-    g.fillStyle = sky; g.fillRect(0, 0, 512, 320);
-    for (let i = 0; i < 22; i++) {
-      const x = (i / 22) * 512 + (i % 3) * 7;
-      const h = 60 + (i * 37) % 110;
-      g.fillStyle = i % 2 ? 'rgba(42,66,44,.7)' : 'rgba(58,82,52,.65)';
-      g.beginPath(); g.moveTo(x, 320); g.lineTo(x - 18, 320 - h); g.lineTo(x + 18, 320 - h); g.fill();
-    }
-    for (let i = 0; i < 40; i++) {
-      g.fillStyle = 'rgba(198,106,150,' + (0.35 + (i % 4) * 0.1) + ')';
-      g.beginPath(); g.arc((i * 71) % 512, 250 + (i % 5) * 12, 4 + (i % 3), 0, Math.PI * 2); g.fill();
-    }
-    const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; return t;
+    const t = new THREE.Texture();
+    const img = new Image();
+    img.onload = () => { t.image = img; t.needsUpdate = true; };
+    img.src = CAFE_GARDEN;
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
   })();
+
   roomViewTex = { day: gardenTex, night: gardenTex };
   skyCard = new THREE.Mesh(new THREE.PlaneGeometry(W + 1.2, H + 0.4),
     new THREE.MeshBasicMaterial({ map: gardenTex, fog: false }));
@@ -3614,6 +3591,90 @@ function buildSceneCafe() {
   rugM.receiveShadow = true;
   put(rugM);
 
+  /* ============================== v12.4.2 补内容 ==============================
+     对照参考图，原场景只有 2 把椅子 + 1 张茶几 + 空搁板，太空。
+     补四类：书架塞满书、茶几杯碟、地上蜡烛、环形吊灯垂挂绿植。
+     ======================================================================== */
+  {
+    const bookCols = [0x6b3a2e, 0x2f3f4a, 0x7a6240, 0x3c4a34, 0x8a6a52, 0x4a3a52];
+    /* 左墙两层搁板塞书：沿墙（z 方向）排布。
+       原来按 x 排，只有 0.7 米可用宽度，只放得下 6 本；
+       书架的进深方向才是真正该排满的轴。 */
+    for (const sy of [1.30, 1.72]) {
+      let bz = -2.55;
+      let k = 0;
+      while (bz < 1.75) {
+        const bw = 0.028 + (k % 4) * 0.008;   // 书脊厚度（沿 z）
+        const bh = 0.16 + ((k * 7) % 5) * 0.022;
+        const bm = new THREE.MeshStandardMaterial({
+          color: bookCols[k % bookCols.length], roughness: 0.86,
+        });
+        box(0.20, bh, bw, X0 + 0.26, sy + bh / 2, bz, bm, false);
+        bz += bw + 0.005;
+        k++;
+        /* 每隔一段留个空档，像真书架那样有缝隙 */
+        if (k % 9 === 0) bz += 0.07;
+      }
+    }
+    /* 书堆：地上两摞，参考图里散落的书 */
+    for (const [sx, sz, n] of [[-1.15, 1.35, 4], [2.05, 0.85, 3]]) {
+      for (let i = 0; i < n; i++) {
+        const bm = new THREE.MeshStandardMaterial({
+          color: bookCols[(i + 2) % bookCols.length], roughness: 0.86,
+        });
+        box(0.26 - i * 0.012, 0.035, 0.19 - i * 0.008, sx + (i % 2) * 0.01,
+            0.018 + i * 0.036, sz, bm, false);
+      }
+    }
+    /* 茶几上的杯碟：三组，白瓷 */
+    const porcelain = new THREE.MeshStandardMaterial({ color: 0xe8e0d0, roughness: 0.34 });
+    for (const [cx, cz] of [[0.18, -0.62], [0.52, -0.38], [0.30, -0.86]]) {
+      const cup = new THREE.Mesh(new THREE.CylinderGeometry(0.036, 0.030, 0.055, 14), porcelain);
+      cup.position.set(cx, 0.53, cz);
+      put(cup);
+      const saucer = new THREE.Mesh(new THREE.CylinderGeometry(0.062, 0.058, 0.008, 16), porcelain);
+      saucer.position.set(cx, 0.497, cz);
+      put(saucer);
+    }
+    /* 地上散落蜡烛：参考图里沿墙一排 */
+    const wax = new THREE.MeshStandardMaterial({ color: 0xece3cc, roughness: 0.78 });
+    const flame = new THREE.MeshBasicMaterial({ color: 0xffb44a, toneMapped: false });
+    for (const [cx, cz, ch] of [[-2.55, 1.9, 0.15], [-2.3, 2.1, 0.22],
+                                 [-2.02, 1.85, 0.12], [1.72, 1.95, 0.18],
+                                 [1.95, 2.12, 0.10]]) {
+      const c = new THREE.Mesh(new THREE.CylinderGeometry(0.032, 0.032, ch, 12), wax);
+      c.position.set(cx, ch / 2 + 0.005, cz);
+      put(c);
+      const f = new THREE.Mesh(new THREE.SphereGeometry(0.014, 8, 6), flame);
+      f.position.set(cx, ch + 0.012, cz);
+      put(f);
+    }
+    /* 环形吊灯上垂挂的绿植：参考图里环上挂满藤蔓 */
+    const vine = new THREE.MeshStandardMaterial({ color: 0x3a5230, roughness: 0.94 });
+    const vineDark = new THREE.MeshStandardMaterial({ color: 0x273a22, roughness: 0.95 });
+    /* 不规则藤蔓：每串长度、叶片大小、朝向都错开，
+       否则一圈同样大小的球就是「葡萄串」 */
+    for (let i = 0; i < 11; i++) {
+      const a = (i / 11) * Math.PI * 2 + Math.sin(i * 3.7) * 0.15;
+      const rx = (0.52 + Math.sin(i * 2.3) * 0.06) * Math.cos(a);
+      const rz = (0.52 + Math.cos(i * 1.9) * 0.06) * Math.sin(a);
+      const drop = 2 + (i % 4);            // 每串 2–5 片
+      for (let j = 0; j < drop; j++) {
+        const r = 0.028 + ((i + j) % 3) * 0.011;
+        const leaf = new THREE.Mesh(
+          new THREE.IcosahedronGeometry(r, 0), j % 2 ? vine : vineDark);
+        leaf.position.set(
+          -0.2 + rx + Math.sin(i * 5.1 + j) * 0.035,
+          2.15 - j * (0.055 + (i % 3) * 0.012),
+          -0.7 + rz + Math.cos(i * 4.3 + j) * 0.035,
+        );
+        leaf.scale.set(0.8, 0.55, 1.5);
+        leaf.rotation.y = i * 0.7 + j * 0.4;
+        put(leaf);
+      }
+    }
+  }
+
   initialPieces = [
     ['coffeeTable', -0.3, -0.7, 0],
     ['armchair', -2.1, -0.2, -0.5],
@@ -3626,8 +3687,6 @@ function buildSceneCafe() {
     ['bookStack', -0.8, -0.9, 0.3],
     ['fireplace', 3.3, 1.2, -Math.PI / 2],
   ];
-
-  addBackdrop(put, W, D, H, surfaceMat.wallSide);
 
   return {
     id: 'cafe', name: '林间咖啡馆', hour: 17.4,
@@ -3651,15 +3710,9 @@ function buildSceneNight() {
   /* 通高落地窗：四扇黑框玻璃，窗外城市 */
   const panes = [-2.7, -0.9, 0.9, 2.7];
   for (const px of panes) {
-    /* v12.4.1：原来这里是一整块不透明黑板，把窗外城市照片完全挡住，
-       所以夜里窗外一片死黑。改成四条边框 + 一层透明玻璃，中间留空。 */
-    const PW = 1.75, PH = 2.9, FR = 0.075;
-    box(PW, FR, 0.09, px, 1.48 + PH / 2, Z0 + 0.04, black);       // 上框
-    box(PW, FR, 0.09, px, 1.48 - PH / 2, Z0 + 0.04, black);       // 下框
-    box(FR, PH, 0.09, px - PW / 2, 1.48, Z0 + 0.04, black);       // 左框
-    box(FR, PH, 0.09, px + PW / 2, 1.48, Z0 + 0.04, black);       // 右框
-    const glass = new THREE.Mesh(new THREE.PlaneGeometry(PW - FR * 2, PH - FR * 2),
-      new THREE.MeshStandardMaterial({ color: 0x1a2430, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.12 }));
+    box(1.75, 2.9, 0.09, px, 1.48, Z0 + 0.04, black);
+    const glass = new THREE.Mesh(new THREE.PlaneGeometry(1.68, 2.82),
+      new THREE.MeshStandardMaterial({ color: 0x0b1018, roughness: 0.05, metalness: 0.2, transparent: true, opacity: 0.3 }));
     glass.position.set(px, 1.48, Z0 + 0.1);
     put(glass);
   }
@@ -3751,13 +3804,11 @@ function buildSceneNight() {
     ['candle', -1.45, -2.3, 0],
   ];
 
-  addBackdrop(put, W, D, H, surfaceMat.wallBack);
-
   return {
     id: 'night', name: '夜景公寓', hour: 21.2,
     mats: {
       floor: ['wood', 'smoked'], wallBack: ['paint', 'deep'], wallSide: ['paint', 'deep'],
-      sofa: ['fabric', 'velvet'], rug: ['stone', 'concrete'], woodwork: ['wood', 'walnut'],
+      sofa: ['fabric', 'velvet'], rug: ['fabric', 'indigo'], woodwork: ['wood', 'walnut'],
     },
   };
 }
@@ -3850,8 +3901,6 @@ function buildSceneForest() {
     ['candle', -1.35, -2.35, 0],
     ['bookStack', 2.55, -2.35, 0.5],
   ];
-
-  addBackdrop(put, W, D, H, surfaceMat.wallBack);
 
   return {
     id: 'forest', name: '雾林卧室', hour: 9.4,
