@@ -38,11 +38,11 @@ def mat(name, col, rough=0.8, metal=0.0, emis=None, power=0.0):
 
 
 # 明度按参考图取：室内整体很暗，床品是唯一大面积亮色
-M_FLOOR = mat("floor", (0.150, 0.095, 0.058), 0.42)     # 深木地板
+M_FLOOR = mat("floor", (0.105, 0.068, 0.042), 0.42)     # 深木地板
 M_WALL = mat("wall", (0.085, 0.080, 0.082), 0.92)        # 深灰墙
 M_FRAME = mat("frame", (0.045, 0.045, 0.050), 0.38, 0.55)  # 黑钢窗框
-M_SHEET = mat("sheet", (0.880, 0.850, 0.790), 0.95)      # 白床品
-M_DUVET = mat("duvet", (0.800, 0.770, 0.710), 0.96)
+M_SHEET = mat("sheet", (0.815, 0.810, 0.800), 0.95)      # 白床品
+M_DUVET = mat("duvet", (0.735, 0.730, 0.720), 0.96)
 M_BEDBASE = mat("bedbase", (0.070, 0.058, 0.050), 0.58)
 M_WOOD = mat("wood", (0.125, 0.080, 0.048), 0.62)        # 木家具
 M_BRICK = mat("brick", (0.240, 0.115, 0.075), 0.92)
@@ -91,8 +91,10 @@ def ball(r, x, y, z, m, name, seg=20):
     return o
 
 
-def soft(w, d, h, x, y, z, m, name, bevel=0.06, sub=1):
-    """软包：倒角 + 一次细分，圆润但不爆面"""
+def soft(w, d, h, x, y, z, m, name, bevel=0.06, sub=1, wrinkle=0.0):
+    """软包：倒角 → 细分 → 噪声位移（wrinkle）。
+       wrinkle 让床品有柔软的起伏，不是几个方块 —— 家具的「柔软感」
+       靠形体轮廓，不靠贴图。"""
     o = box(w, d, h, x, y, z, m, name)
     bpy.ops.object.modifier_add(type='BEVEL')
     bv = o.modifiers[-1]
@@ -103,6 +105,14 @@ def soft(w, d, h, x, y, z, m, name, bevel=0.06, sub=1):
         sm = o.modifiers.new("s", 'SUBSURF')
         sm.levels = sub
         bpy.ops.object.modifier_apply(modifier=sm.name)
+    if wrinkle > 0:
+        tex = bpy.data.textures.new("w" + name, 'CLOUDS')
+        tex.noise_scale = 0.22
+        dm = o.modifiers.new("d", 'DISPLACE')
+        dm.texture = tex
+        dm.strength = wrinkle
+        dm.mid_level = 0.5
+        bpy.ops.object.modifier_apply(modifier=dm.name)
     bpy.ops.object.shade_smooth()
     return o
 
@@ -139,20 +149,37 @@ for i in range(22):
 
 # ============================== 床（参考图主体）==============================
 BED_X, BED_Y = 0.30, 3.55
-# 床架 + 床尾板
-box(2.32, 1.96, 0.30, BED_X, BED_Y, 0.15, M_BEDBASE, "bedframe")
-box(2.36, 0.14, 0.46, BED_X, BED_Y + 0.98, 0.38, M_BEDBASE, "footboard")
-# 床垫
-soft(2.16, 1.84, 0.24, BED_X, BED_Y, 0.42, M_SHEET, "mattress", 0.09)
-# 被褥：三层错落堆叠，模拟参考图的凌乱感
-soft(2.02, 1.16, 0.20, BED_X - 0.05, BED_Y - 0.26, 0.64, M_DUVET, "duvet1", 0.13)
-soft(1.66, 0.74, 0.15, BED_X + 0.15, BED_Y + 0.26, 0.71, M_DUVET, "duvet2", 0.11)
-soft(1.30, 0.46, 0.11, BED_X - 0.28, BED_Y + 0.52, 0.75, M_SHEET, "duvet3", 0.09)
-# 枕头两只
-soft(0.70, 0.42, 0.16, BED_X - 0.56, BED_Y - 0.72, 0.62, M_SHEET, "pillow1", 0.09)
-soft(0.70, 0.42, 0.16, BED_X + 0.54, BED_Y - 0.74, 0.63, M_SHEET, "pillow2", 0.09)
-# 床尾垂下的被子
-soft(1.86, 0.34, 0.22, BED_X - 0.02, BED_Y + 0.96, 0.40, M_DUVET, "drape", 0.08)
+# ---- 真实床结构：床腿 → 床架 → 床垫 → 床单 → 被子 → 枕头 → 床头板 ----
+# 床腿（四角，让床离地，有阴影）
+for lx in (-1.02, 1.02):
+    for ly in (-0.86, 0.86):
+        box(0.10, 0.10, 0.14, BED_X + lx, BED_Y + ly, 0.07, M_BEDBASE, "bedleg")
+# 床架：深色布艺包边，比床垫略窄一点，露出边线
+soft(2.30, 1.94, 0.26, BED_X, BED_Y, 0.27, M_BEDBASE, "bedframe", 0.05, 1)
+# 床垫：白色，圆角大，比床架略小，坐上去会陷的那种厚度
+soft(2.14, 1.82, 0.28, BED_X, BED_Y, 0.53, M_SHEET, "mattress", 0.11, 2, 0.010)
+# 床单：铺在床垫上，四边垂下来（薄片包边）
+soft(2.16, 1.84, 0.045, BED_X, BED_Y, 0.685, M_SHEET, "bedsheet", 0.02, 1, 0.008)
+for side, (sw, sd, sx, sy) in {
+    'L': (0.035, 1.86, -1.09, 0), 'R': (0.035, 1.86, 1.09, 0),
+    'F': (2.18, 0.035, 0, 0.93),
+}.items():
+    soft(sw, sd, 0.26, BED_X + sx, BED_Y + sy, 0.56, M_SHEET,
+         "sheetdrop" + side, 0.015, 1, 0.006)
+# 被子：盖住床下半部，表面有起伏；体积感靠厚度 + 褶皱
+soft(2.12, 1.22, 0.19, BED_X - 0.03, BED_Y + 0.26, 0.79, M_DUVET, "duvet", 0.10, 2, 0.016)
+# 被子垂到床侧（两片，长短不一，像被人掀过）
+soft(0.30, 1.14, 0.30, BED_X + 1.02, BED_Y + 0.30, 0.60, M_DUVET, "duvetdropR", 0.09, 2, 0.013)
+soft(0.26, 0.90, 0.24, BED_X - 1.04, BED_Y + 0.34, 0.64, M_DUVET, "duvetdropL", 0.08, 2, 0.011)
+# 被角翻起（一小片搭在床面上，增加"用过"的痕迹）
+soft(0.86, 0.42, 0.09, BED_X + 0.52, BED_Y - 0.10, 0.86, M_SHEET, "fold", 0.07, 1, 0.008)
+# 枕头：两只，略带弧度，靠床头斜放
+soft(0.72, 0.46, 0.19, BED_X - 0.52, BED_Y - 0.66, 0.77, M_SHEET, "pillow1", 0.10, 2, 0.010)
+soft(0.72, 0.46, 0.19, BED_X + 0.50, BED_Y - 0.68, 0.77, M_SHEET, "pillow2", 0.10, 2, 0.010)
+# 床尾搭毯：深色薄毯盖在被子下沿，做出层次
+soft(2.14, 0.42, 0.10, BED_X - 0.02, BED_Y + 0.72, 0.86, mat("throw", (0.26, 0.20, 0.16), 0.95), "throw", 0.07, 1, 0.008)
+# 床头板：竖向靠墙，比床略宽，有厚度
+soft(2.38, 0.13, 0.80, BED_X, BED_Y - 0.98, 0.78, M_WOOD, "headboard", 0.05, 1, 0.006)
 
 # 床头柜 ×2
 for sx in (-1.55, 1.55):
@@ -221,6 +248,39 @@ box(WIN_X1 - WIN_X0 - 0.2, 0.05, 0.035, 0, 0.10, 0.68, M_LEDB, "ledb2")
 # 左墙踢脚蓝光
 box(0.05, 2.4, 0.035, -3.93, 1.25, 0.10, M_LEDB, "ledb3")
 
+# ============================== 窗外城市楼群 ==============================
+# 原来用一块贴图平面挂在窗外，从侧面看就是一块竖着的板，很多余。
+# 改成立体楼群：真实的盒子几何，从任何角度看都合理。
+M_CITY = mat("city", (0.105, 0.120, 0.165), 0.92)
+M_CITY2 = mat("city2", (0.075, 0.090, 0.130), 0.94)
+M_CITYWIN = mat("citywin", (1.0, 0.86, 0.58), 0.5, emis=(1.0, 0.86, 0.58), power=1.5)
+M_CITYWIN2 = mat("citywin2", (0.55, 0.72, 1.0), 0.5, emis=(0.55, 0.72, 1.0), power=1.2)
+
+import random as _r
+_r.seed(3307)
+for i in range(34):
+    bx = _r.uniform(-13, 13)
+    by = _r.uniform(-9.5, -3.6)
+    bw = _r.uniform(0.5, 1.9)
+    bd = _r.uniform(0.5, 1.9)
+    bh = _r.uniform(1.1, 4.6)
+    m = M_CITY if i % 3 else M_CITY2
+    box(bw, bd, bh, bx, by, bh / 2 - 0.4, m, "tower%d" % i)
+    # 楼上的亮窗：几片小发光方块，位置随机但有规律
+    nw = 2 + (i % 4)
+    for k in range(nw):
+        wz = 0.5 + (k * 0.7) % max(0.6, bh - 0.8)
+        wx = bx + _r.uniform(-bw * 0.3, bw * 0.3)
+        box(0.10, 0.03, 0.12, wx, by - bd / 2 - 0.01, wz,
+            M_CITYWIN if (i + k) % 2 else M_CITYWIN2, "cwin%d_%d" % (i, k))
+
+# 远处天际线：一排更矮更暗的剪影，压出深度
+for i in range(18):
+    bx = -16 + i * 1.9
+    bh = _r.uniform(0.8, 2.4)
+    box(_r.uniform(1.2, 1.8), _r.uniform(0.8, 1.4), bh,
+        bx, -12.5, bh / 2 - 0.4, M_CITY2, "far%d" % i)
+
 # ============================== 合并 + 烘 AO ==============================
 bpy.ops.object.select_all(action='SELECT')
 objs = [o for o in bpy.context.selected_objects if o.type == 'MESH']
@@ -230,6 +290,15 @@ a = bpy.context.object
 a.name = "nightRoom"
 a.location = (0, 0, 0)
 me = a.data
+
+# ---- 朝向修正 ----
+# Blender 里窗墙在 y=0（靠近相机侧）；导出后 glTF z=-y，
+# 结果窗墙反而挡在镜头前、床和床头板在背面 —— 看到的是床头板背面。
+# 整体把 y 翻成 (D - y)：窗墙到 y=6（远端），床到 y=2.45（中景），
+# 从相机看就是「床在前、窗在后」，和参考图一致。
+D_ROOM = 6.0
+for v in me.vertices:
+    v.co.y = D_ROOM - v.co.y
 
 col = me.color_attributes.new(name="Col", type='BYTE_COLOR', domain='CORNER')
 me.color_attributes.active_color_name = "Col"
@@ -262,7 +331,7 @@ bpy.ops.object.bake(type='AO', margin=3)
 # AO 乘进基色：柜下/墙角自然变暗，Basic/Standard 都有立体感
 for i in range(len(col.data)):
     c = col.data[i].color
-    k = 0.42 + 0.58 * ao.data[i].color[0]
+    k = 0.30 + 0.70 * ao.data[i].color[0]
     col.data[i].color = (c[0] * k, c[1] * k, c[2] * k, 1.0)
 me.color_attributes.remove(ao)
 me.color_attributes.active_color_name = "Col"
