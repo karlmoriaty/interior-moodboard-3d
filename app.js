@@ -670,6 +670,12 @@ scene.environmentIntensity = 0.3;
 
 /* 光 */
 const hemi = new THREE.HemisphereLight(0xdfe9ff, 0x6d5844, 0.6);
+/* v12.5.4：环境光按场景切换。逆光/夜景要压暗，白天场景保持 0.6。 */
+const SCENE_HEMI = { warm: 0.60, cafe: 0.26, night: 0.12, forest: 0.30 };
+function applySceneHemi(id) {
+  const v = SCENE_HEMI[id];
+  if (v !== undefined) hemi.intensity = v;
+}
 scene.add(hemi);
 
 const sun = new THREE.DirectionalLight(0xffe6c4, 2.4);
@@ -3397,9 +3403,35 @@ function buildSceneWarm() {
    原来每个场景只有不投影的点光源，家具之间没有互相遮挡的暗部，
    所以画面永远「平」。给小尺度的模型台配一盏带阴影的聚光灯：
    mapSize 512 就够（模型台只有 1.8 米），penumbra 拉满得到软边。 */
+/* v12.5.4：窗洞辉光。用 canvas 生成径向渐变（暖白 → 透明），
+   AdditiveBlending 叠在窗洞处 —— 强逆光时窗口会向外溢出光雾，
+   这一步把「贴图背景」和「室内光照」连成一个体系。 */
+function makeWindowGlow(w, h, color, strength) {
+  const c = document.createElement('canvas');
+  c.width = 64;
+  c.height = 64;
+  const g = c.getContext('2d');
+  const grd = g.createRadialGradient(32, 40, 2, 32, 40, 46);
+  grd.addColorStop(0, color);
+  grd.addColorStop(0.45, color.replace(/[\d.]+\)$/, '0.45)'));
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grd;
+  g.fillRect(0, 0, 64, 64);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const m = new THREE.Mesh(
+    new THREE.PlaneGeometry(w, h),
+    new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, depthWrite: false,
+      blending: THREE.AdditiveBlending, opacity: strength, fog: false, toneMapped: false,
+    }),
+  );
+  return m;
+}
+
 function addSceneKeyLight(put, opts) {
-  const { color = 0xffd9b0, intensity = 2.6, x = 0, y = 2.4, z = -2.2, dist = 6, angle = 1.15 } = opts || {};
-  const key = new THREE.SpotLight(color, intensity, dist, angle, 1.0, 1.6);
+  const { color = 0xffd9b0, intensity = 2.6, x = 0, y = 2.4, z = -2.2, dist = 6, angle = 1.15, decay = 1.6 } = opts || {};
+  const key = new THREE.SpotLight(color, intensity, dist, angle, 1.0, decay);
   key.position.set(x, y, z);
   key.target.position.set(x, 0, z + 1.6);
   put(key);
@@ -3479,6 +3511,12 @@ function buildSceneCafe() {
   });
   for (const A of arches) {
     const hRect = 1.85, r = A.w / 2;
+    /* 窗洞辉光：把贴图背景的硬边吃掉 */
+    {
+      const gl = makeWindowGlow(A.w * 1.35, hRect * 1.5, 'rgba(255,226,178,0.85)', 0.16);
+      gl.position.set(A.x, hRect * 0.62 + 0.08, Z0 + 0.03);
+      put(gl);
+    }
     /* 下段玻璃 */
     const pane = new THREE.Mesh(new THREE.PlaneGeometry(A.w, hRect), glassMat);
     pane.position.set(A.x, hRect / 2 + 0.08, Z0 + 0.06);
@@ -3570,16 +3608,22 @@ function buildSceneCafe() {
   coveLight = new THREE.PointLight(0xffcf94, 0, 5 * MODEL_SCALE, 2);
   coveLight.position.set(-0.2, 2.35, -0.7);
   put(coveLight);
-  addSceneKeyLight(put, { color: 0xffd8b4, intensity: 2.4, x: -0.2, y: 2.6, z: -2.3 });
-  wallGlow = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), new THREE.MeshBasicMaterial({ color: 0xffc98a, transparent: true, opacity: 0, depthWrite: false }));
+  /* v12.5.4：逆光。参考图的光是从窗外斜射进来的暖金，
+     室内本该偏暗、只有地面和家具边缘被点亮 ——
+     原来 2.4 的正面光把室内照成均匀白亮，和窗外完全不在一个光照体系。 */
+  addSceneKeyLight(put, { color: 0xffcf96, intensity: 5.0, x: -0.35, y: 1.95, z: -2.70, angle: 0.62, decay: 3.8 });
+  addSceneKeyLight(put, { color: 0xffb877, intensity: 1.4, x: 2.1, y: 1.7, z: -2.55, angle: 0.8, decay: 2.4 });
+  /* v12.5.4：这三个光斑面一直 opacity:0（从没用上）。
+     逆光场景里地面必须有窗格投影的金色光斑，否则室内像棚拍。 */
+  wallGlow = new THREE.Mesh(new THREE.PlaneGeometry(3, 2), new THREE.MeshBasicMaterial({ color: 0xffc98a, transparent: true, opacity: 0.16, depthWrite: false, blending: THREE.AdditiveBlending }));
   wallGlow.position.set(X0 + 0.02, 1.5, -1.4);
   wallGlow.rotation.y = Math.PI / 2;
   put(wallGlow);
-  floorPool = new THREE.Mesh(new THREE.PlaneGeometry(4, 3), new THREE.MeshBasicMaterial({ color: 0xffbe7c, transparent: true, opacity: 0, depthWrite: false }));
+  floorPool = new THREE.Mesh(new THREE.PlaneGeometry(4, 3), new THREE.MeshBasicMaterial({ color: 0xffb868, transparent: true, opacity: 0.30, depthWrite: false, blending: THREE.AdditiveBlending }));
   floorPool.rotation.x = -Math.PI / 2;
   floorPool.position.set(0, 0.02, -1);
   put(floorPool);
-  windowCast = new THREE.Mesh(new THREE.PlaneGeometry(5, 2), new THREE.MeshBasicMaterial({ color: 0xd8e0cc, transparent: true, opacity: 0, depthWrite: false }));
+  windowCast = new THREE.Mesh(new THREE.PlaneGeometry(5, 2), new THREE.MeshBasicMaterial({ color: 0xffc888, transparent: true, opacity: 0.22, depthWrite: false, blending: THREE.AdditiveBlending }));
   windowCast.rotation.x = -Math.PI / 2;
   windowCast.position.set(0, 0.018, -1.9);
   put(windowCast);
@@ -3598,11 +3642,15 @@ function buildSceneCafe() {
   })();
 
   roomViewTex = { day: gardenTex, night: gardenTex };
-  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(W + 1.2, H + 0.4),
-    /* toneMapped:false —— 否则被 ACES + 0.72 曝光压成灰蒙，
-       参考图的通透暖金逆光全靠这张图的原始亮度 */
+  /* v12.5.4：原来 9.2×3.4 放在墙外 0.5 m，斜看能看见板子的竖边，
+     像贴了张海报。改成贴墙 0.1 m + 放大到 22×11，
+     边缘远在视野之外；贴图按原始比例居中裁切，不拉伸。 */
+  /* 板子 7.2×4.2（保持图 1.71 比例）贴在墙外 0.10 m：
+     略大于窗洞即可 —— 放大到 22×11 会让窗洞只采到图中间那块均匀暖雾，
+     反而变成一片米色。贴墙后边缘藏在墙后，斜看也看不见板边。 */
+  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 4.2),
     new THREE.MeshBasicMaterial({ map: gardenTex, fog: false, toneMapped: false }));
-  skyCard.position.set(0, H / 2, Z0 - 0.5);
+  skyCard.position.set(0, 1.55, Z0 - 0.10);
   put(skyCard);
 
   /* 地毯 */
@@ -3709,6 +3757,7 @@ function buildSceneCafe() {
     ['fireplace', 3.3, 1.2, -Math.PI / 2],
   ];
 
+  applySceneHemi('cafe');
   return {
     id: 'cafe', name: '林间咖啡馆', hour: 17.4,
     mats: {
@@ -3857,13 +3906,22 @@ function buildSceneForest() {
   box(WIN.x1 - WIN.x0, WIN.y0, T, 0, WIN.y0 / 2, Z0 - T / 2, surfaceMat.wallBack);
   box(WIN.x1 - WIN.x0, H - WIN.y1, T, 0, (H + WIN.y1) / 2, Z0 - T / 2, surfaceMat.wallBack);
 
+  /* 窗洞辉光：雪地反光是冷白的，和室内的串灯暖黄形成对比 */
+  for (const gx of [-1.78, 0, 1.78]) {
+    const gl = makeWindowGlow(3.0, 3.2, 'rgba(198,222,255,0.85)', 0.15);
+    gl.position.set(gx, 1.5, Z0 + 0.04);
+    put(gl);
+  }
+
   /* 窗外雾林：已有内联贴图 */
   const t = new THREE.TextureLoader().load(FOREST_BG);
   t.colorSpace = THREE.SRGBColorSpace;
   roomViewTex = { day: t, night: t };
-  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(WIN.x1 - WIN.x0, WIN.y1 - WIN.y0),
-    new THREE.MeshBasicMaterial({ map: t }));
-  skyCard.position.set(0, (WIN.y0 + WIN.y1) / 2, Z0 - 0.26);
+  /* v12.5.4：同咖啡馆 —— 贴墙 + 放大，板边不进视野 */
+  const winW = WIN.x1 - WIN.x0, winH = WIN.y1 - WIN.y0;
+  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(winW + 0.6, (winW + 0.6) * 656 / 1120),
+    new THREE.MeshBasicMaterial({ map: t, fog: false, toneMapped: false }));
+  skyCard.position.set(0, (WIN.y0 + WIN.y1) / 2, Z0 - 0.10);
   put(skyCard);
 
   /* 串灯：沿窗上沿垂下来的暖黄灯泡 */
@@ -3927,6 +3985,7 @@ function buildSceneForest() {
     ['bookStack', 2.55, -2.35, 0.5],
   ];
 
+  applySceneHemi('forest');
   return {
     id: 'forest', name: '雾林卧室', hour: 9.4,
     mats: {
