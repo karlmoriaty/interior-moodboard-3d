@@ -3470,9 +3470,12 @@ function buildSceneCafe() {
   const arches = [
     { x: -2.6, w: 2.0 }, { x: 0, w: 2.0 }, { x: 2.6, w: 2.0 },
   ];
+  /* v12.5.3：原来玻璃是 0xa8b8a0（灰绿）+ 0.16 不透明，
+     叠在窗外背景上会把暖金湖面染成灰绿 —— 这是「换图也不通透」的真凶。
+     改成近无色的冷白 + 0.06，只留一点玻璃感。 */
   const glassMat = new THREE.MeshStandardMaterial({
-    color: 0xa8b8a0, roughness: 0.1, metalness: 0.05,
-    transparent: true, opacity: 0.16, side: THREE.DoubleSide, depthWrite: false,
+    color: 0xe8f0f6, roughness: 0.1, metalness: 0.05,
+    transparent: true, opacity: 0.06, side: THREE.DoubleSide, depthWrite: false,
   });
   for (const A of arches) {
     const hRect = 1.85, r = A.w / 2;
@@ -3596,7 +3599,9 @@ function buildSceneCafe() {
 
   roomViewTex = { day: gardenTex, night: gardenTex };
   skyCard = new THREE.Mesh(new THREE.PlaneGeometry(W + 1.2, H + 0.4),
-    new THREE.MeshBasicMaterial({ map: gardenTex, fog: false }));
+    /* toneMapped:false —— 否则被 ACES + 0.72 曝光压成灰蒙，
+       参考图的通透暖金逆光全靠这张图的原始亮度 */
+    new THREE.MeshBasicMaterial({ map: gardenTex, fog: false, toneMapped: false }));
   skyCard.position.set(0, H / 2, Z0 - 0.5);
   put(skyCard);
 
