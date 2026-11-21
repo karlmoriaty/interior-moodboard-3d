@@ -11,6 +11,7 @@ import { FOREST_BG } from './forest-bg.js';
 import { FURNITURE_ASSETS } from './furniture-assets.js';
 import { CAFE_GARDEN } from './cafe-garden.js';
 import { NIGHT_SCENE } from './night-scene-assets.js';
+import { NIGHT_CITY } from './night-city.js';
 
 /* ============================== 0. 小工具 ============================== */
 const $ = (s) => document.querySelector(s);
@@ -4344,7 +4345,27 @@ function makeNight3D(put) {
   const mesh = decodeNightScene();
   /* Blender 场景约 6.8 宽 × 3 高；模型台房间 8×3，直接放进去 */
   mesh.position.set(0, 0, -0.6);
+  mesh.userData.isNight3D = true;
   put(mesh);
+
+  /* v12.4.9：窗外城市。
+     参考图的核心是「密集楼群 + 灯火」，这部分是远景，用实拍贴图最真实
+     （真实场景制作也这么做）。作为独立平面挂在窗外，随模型台一起旋转，
+     不是贴在房间上的占位图。 */
+  const cityTex = new THREE.Texture();
+  const cimg = new Image();
+  cimg.onload = () => { cityTex.image = cimg; cityTex.needsUpdate = true; };
+  cimg.src = NIGHT_CITY;
+  cityTex.colorSpace = THREE.SRGBColorSpace;
+  const city = new THREE.Mesh(
+    new THREE.PlaneGeometry(8.2, 4.6),
+    new THREE.MeshBasicMaterial({ map: cityTex, toneMapped: false, side: THREE.DoubleSide }),
+  );
+  city.position.set(0, 1.95, -3.15);   /* 紧贴窗墙外侧，别盖住整个背景 */
+  city.userData.isNight3D = true;
+  city.userData.isNightCity = true;
+  put(city);
+
   return mesh;
 }
 
