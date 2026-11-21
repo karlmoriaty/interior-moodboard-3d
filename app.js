@@ -11,6 +11,7 @@ import { FOREST_BG } from './forest-bg.js';
 import { FURNITURE_ASSETS } from './furniture-assets.js';
 import { CAFE_GARDEN } from './cafe-garden.js';
 import { NIGHT_SCENE } from './night-scene-assets.js';
+import { BED_V2 } from './bed-v2-assets.js';
 
 /* ============================== 0. 小工具 ============================== */
 const $ = (s) => document.querySelector(s);
@@ -3816,7 +3817,6 @@ function buildSceneNight() {
     ['sideTable', -1.45, -2.05, 0],
     ['sideTable', 2.35, -2.05, 0],
     ['lamp', 2.8, 0.4, 0],
-    ['plant', 1.7, -2.6, 0.2],
     ['candle', -1.45, -2.3, 0],
   ];
 
@@ -3916,8 +3916,8 @@ function buildSceneForest() {
     ['lamp', 2.95, 0.55, 0],
     /* v12.4：这两株原来挤在钢琴和床的后角，推开后又被边界夹回，
        改成放在钢琴前方和床右侧的空地 */
-    ['plant', -2.95, -0.35, 0.2],
-    ['plant', 2.15, 0.75, -0.3],
+    ['plant', -3.35, -0.20, 0.2],
+    ['plant', 2.80, 1.15, -0.3],
     ['candle', -1.35, -2.35, 0],
     ['bookStack', 2.55, -2.35, 0.5],
   ];
@@ -4231,7 +4231,43 @@ function makePendant() {
    比原来的纯几何体多了倒角、软包分层、被褥和琴键细节。
    ============================================================================ */
 let furnitureCache = null;
+/* v12.5.1：床单独走 BED_V2 —— 旧家具包里的床，床头板插在床正中央，
+   三条软包竖缝也重叠在那儿，整张床结构不成立。
+   新床按现实尺度重建（2.05×1.55 m），数据独立，不动其他 13 件家具。 */
+let bedV2Geo = null;
+function bedV2Geometry() {
+  if (bedV2Geo) return bedV2Geo;
+  const bin = Uint8Array.from(atob(BED_V2.data), (c) => c.charCodeAt(0));
+  const dv = new DataView(bin.buffer);
+  const n = dv.getUint32(0, true);
+  const u32 = dv.getUint32(4, true) === 1;
+  let o = 8;
+  const pos = new Float32Array(n * 3);
+  for (let i = 0; i < n * 3; i++) { pos[i] = dv.getFloat32(o, true); o += 4; }
+  const c8 = new Uint8Array(bin.buffer, o, n * 4); o += n * 4;
+  const color = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    color[i * 3] = c8[i * 4] / 255;
+    color[i * 3 + 1] = c8[i * 4 + 1] / 255;
+    color[i * 3 + 2] = c8[i * 4 + 2] / 255;
+  }
+  const idxCount = (bin.length - o) / (u32 ? 4 : 2);
+  const idx = u32 ? new Uint32Array(idxCount) : new Uint16Array(idxCount);
+  for (let i = 0; i < idxCount; i++) {
+    idx[i] = u32 ? dv.getUint32(o, true) : dv.getUint16(o, true);
+    o += u32 ? 4 : 2;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(color, 3));
+  g.setIndex(new THREE.BufferAttribute(idx, 1));
+  g.computeVertexNormals();
+  bedV2Geo = g;
+  return g;
+}
+
 function furnitureGeom(name) {
+  if (name === 'bed') return bedV2Geometry();
   if (!furnitureCache) {
     const raw = atob(FURNITURE_ASSETS.data);
     const bytes = new Uint8Array(raw.length);
@@ -4342,8 +4378,11 @@ function decodeNightScene() {
 
 function makeNight3D(put) {
   const mesh = decodeNightScene();
-  /* 场景顶点已翻转到 z=-6..0，+3 后居中到房间 -3..3 */
-  mesh.position.set(0, 0, 3);
+  /* 朝向：Blender 里窗墙在 y=0，glTF z=-y 让它落在 z=0（靠近镜头）。
+     绕 Y 轴转 180° 把窗推到远端，再平移 -3 居中到房间 -3..3。
+     用标准旋转而不是在 Blender 里翻顶点 —— 后者反复算错。 */
+  mesh.rotation.y = Math.PI;
+  mesh.position.set(0, 0, -3);
   mesh.userData.isNight3D = true;
   put(mesh);
 

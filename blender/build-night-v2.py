@@ -258,28 +258,24 @@ M_CITYWIN2 = mat("citywin2", (0.55, 0.72, 1.0), 0.5, emis=(0.55, 0.72, 1.0), pow
 
 import random as _r
 _r.seed(3307)
-for i in range(34):
-    bx = _r.uniform(-13, 13)
-    by = _r.uniform(-9.5, -3.6)
-    bw = _r.uniform(0.5, 1.9)
-    bd = _r.uniform(0.5, 1.9)
-    bh = _r.uniform(1.1, 4.6)
+# 楼群必须紧贴窗框正后方（窗外 0.4–1.0 m），否则在 8×6 的模型台里
+# 会飘成一片碎片 —— 之前放到 6–10 m 外就是这个后果。
+# 翻转后 y' = 6 - y，z_gltf = -y'，+3 后落在 z = -3.4 ~ -4.0。
+for i in range(22):
+    bx = _r.uniform(-4.0, 4.0)
+    by = _r.uniform(-1.0, -0.4)      # 窗外紧邻
+    bw = _r.uniform(0.28, 0.62)
+    bd = _r.uniform(0.20, 0.40)
+    bh = _r.uniform(0.45, 1.35)      # 矮剪影，不压过窗高
     m = M_CITY if i % 3 else M_CITY2
-    box(bw, bd, bh, bx, by, bh / 2 - 0.4, m, "tower%d" % i)
-    # 楼上的亮窗：几片小发光方块，位置随机但有规律
-    nw = 2 + (i % 4)
+    box(bw, bd, bh, bx, by, bh / 2 - 0.30, m, "tower%d" % i)
+    # 少量亮窗：贴在楼朝房间那一面
+    nw = 1 + (i % 3)
     for k in range(nw):
-        wz = 0.5 + (k * 0.7) % max(0.6, bh - 0.8)
-        wx = bx + _r.uniform(-bw * 0.3, bw * 0.3)
-        box(0.10, 0.03, 0.12, wx, by - bd / 2 - 0.01, wz,
+        wz = 0.35 + (k * 0.34) % max(0.25, bh - 0.35)
+        box(0.055, 0.02, 0.07, bx + _r.uniform(-bw * 0.25, bw * 0.25),
+            by + bd / 2 + 0.005, wz,
             M_CITYWIN if (i + k) % 2 else M_CITYWIN2, "cwin%d_%d" % (i, k))
-
-# 远处天际线：一排更矮更暗的剪影，压出深度
-for i in range(18):
-    bx = -16 + i * 1.9
-    bh = _r.uniform(0.8, 2.4)
-    box(_r.uniform(1.2, 1.8), _r.uniform(0.8, 1.4), bh,
-        bx, -12.5, bh / 2 - 0.4, M_CITY2, "far%d" % i)
 
 # ============================== 合并 + 烘 AO ==============================
 bpy.ops.object.select_all(action='SELECT')
@@ -290,15 +286,6 @@ a = bpy.context.object
 a.name = "nightRoom"
 a.location = (0, 0, 0)
 me = a.data
-
-# ---- 朝向修正 ----
-# Blender 里窗墙在 y=0（靠近相机侧）；导出后 glTF z=-y，
-# 结果窗墙反而挡在镜头前、床和床头板在背面 —— 看到的是床头板背面。
-# 整体把 y 翻成 (D - y)：窗墙到 y=6（远端），床到 y=2.45（中景），
-# 从相机看就是「床在前、窗在后」，和参考图一致。
-D_ROOM = 6.0
-for v in me.vertices:
-    v.co.y = D_ROOM - v.co.y
 
 col = me.color_attributes.new(name="Col", type='BYTE_COLOR', domain='CORNER')
 me.color_attributes.active_color_name = "Col"
