@@ -11,6 +11,7 @@ import { FOREST_BG } from './forest-bg.js';
 import { FURNITURE_ASSETS } from './furniture-assets.js';
 import { CAFE_GARDEN } from './cafe-garden.js';
 import { NIGHT_RENDER } from './night-render.js';
+import { NIGHT_SCENE } from './night-scene-assets.js';
 
 /* ============================== 0. 小工具 ============================== */
 const $ = (s) => document.querySelector(s);
@@ -3467,15 +3468,23 @@ function makeNightPreview(put) {
 /* 预览开：隐藏程序化房间（room），只留渲染图平面；
    但平面挂在 room 下，所以不能整个隐藏 room —— 改为逐个子节点隐藏。 */
 function applyNightPreviewMode() {
-  if (!room || !nightPreviewMesh) return;
+  if (!room) return;
+  /* v12.4.6 两种呈现互斥：
+     nightPreviewOn = false（默认）→ 真正的 3D 场景几何，可旋转、有深度
+     nightPreviewOn = true  → Blender 渲染的平面预览图（备用）
+     3D 场景 mesh 与预览平面都挂在 room 下，逐个节点设可见性。 */
   for (const child of room.children) {
-    if (child === nightPreviewMesh) continue;
-    /* 地板等底座保留，让渲染图有「立在房间里」的支撑感 */
-    if (child.userData && child.userData.keepInPreview) { child.visible = true; continue; }
-    child.visible = !nightPreviewOn;
+    if (child === nightPreviewMesh) { child.visible = nightPreviewOn; continue; }
+    if (child.userData && child.userData.isNight3D) {
+      child.visible = !nightPreviewOn;
+      continue;
+    }
+    /* 程序化房间构件：预览图模式下也隐藏（图里已含同样内容） */
+    if (child.userData && child.userData.keepInPreview) { child.visible = nightPreviewOn; continue; }
+    child.visible = false;   /* 程序化房间始终隐藏，由 3D 场景几何替代 */
   }
-  /* 家具层也一起隐藏（渲染图里已经有床和家具） */
-  if (PIECES) PIECES.visible = !nightPreviewOn;
+  /* 家具层：3D 场景已含床等，避免重复 */
+  if (PIECES) PIECES.visible = false;
 }
 
 
@@ -3855,6 +3864,11 @@ function buildSceneNight() {
 
   /* v12.4.5：把 Blender 写实渲染图放进模型台。
      默认显示；「切回 3D」按钮会隐藏它并恢复程序化房间。 */
+  /* v12.4.6：真正的 3D 场景几何（替代原来的贴平面图）。
+     Blender 建的床/窗/书架/城市全部是 3D 网格，可旋转、有深度。 */
+  makeNight3D(put);
+  /* 写实预览图默认关闭；只有点「看写实预览图」才显示 */
+  nightPreviewOn = false;
   makeNightPreview(put);
 
   return {
@@ -4343,6 +4357,67 @@ function furnitureGeom(name) {
   return geo;
 }
 
+
+/* ============================ v12.4.6 夜景公寓 3D 场景 ============================
+   NIGHT_SCENE 是 Blender 建的完整场景几何（床/窗/书架/吧台/城市楼群），
+   走和家具相同的 GLB 管线，合并成一个带顶点色的 BufferGeometry。
+   这才是真正的模型台：有深度、能旋转，不是贴一张平面图。
+   ─────────────────────────────────────────────────────────────────────── */
+let nightRoomMesh = null;
+
+function decodeNightScene() {
+  if (nightRoomMesh) return nightRoomMesh;
+  const bin = Uint8Array.from(atob(NIGHT_SCENE.data), (c) => c.charCodeAt(0));
+  const dv = new DataView(bin.buffer);
+  const vCount = dv.getUint32(0, true);
+  const u32 = dv.getUint32(4, true) === 1;
+  let o = 8;
+  const pos = new Float32Array(vCount * 3);
+  for (let i = 0; i < pos.length; i++) { pos[i] = dv.getFloat32(o, true); o += 4; }
+  const col = new Uint8Array(bin.buffer, o, vCount * 4); o += vCount * 4;
+  const idxCount = (bin.length - o) / (u32 ? 4 : 2);
+  const idx = u32 ? new Uint32Array(vCount) : new Uint16Array(vCount);
+  /* 索引数量从剩余字节算；用普通数组先收再转 */
+  let idxArr;
+  if (u32) { idxArr = new Uint32Array(idxCount); for (let i = 0; i < idxCount; i++) { idxArr[i] = dv.getUint32(o, true); o += 4; } }
+  else { idxArr = new Uint16Array(idxCount); for (let i = 0; i < idxCount; i++) { idxArr[i] = dv.getUint16(o, true); o += 2; } }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const c01 = new Float32Array(vCount * 3);
+  /* Blender 场景刻意用了极暗材质（墙 0.02 / 地 0.05），
+     直接搬到 Three.js 会黑成一团。做一次 gamma 0.55 提升，
+     把暗部抬到能看清结构，同时保留夜景的暗调氛围。 */
+  /* 顶点色来自 Blender 材质基色，温和提亮（0.1 + 0.9×c），
+     让暗调夜景在模型台尺度下仍看得出墙/床/地板区分。 */
+  for (let i = 0; i < vCount; i++) {
+    c01[i * 3] = Math.min(1, 0.10 + (col[i * 4] / 255) * 0.90);
+    c01[i * 3 + 1] = Math.min(1, 0.10 + (col[i * 4 + 1] / 255) * 0.90);
+    c01[i * 3 + 2] = Math.min(1, 0.10 + (col[i * 4 + 2] / 255) * 0.90);
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(c01, 3));
+  g.setIndex(new THREE.BufferAttribute(idxArr, 1));
+  g.computeVertexNormals();
+
+  /* 顶点色已含发光体的亮色，用 MeshStandardMaterial + emissive 近似自发光 */
+  /* 用 Basic：顶点色直接显示，不依赖场景光照。
+     夜景场景光很少，Standard 材质会黑成一团。
+     gamma 0.45 把暗调材质抬到能看清结构。 */
+  const mat = new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide });
+  nightRoomMesh = new THREE.Mesh(g, mat);
+  nightRoomMesh.castShadow = false;
+  nightRoomMesh.receiveShadow = true;
+  nightRoomMesh.userData.isNight3D = true;
+  return nightRoomMesh;
+}
+
+function makeNight3D(put) {
+  const mesh = decodeNightScene();
+  /* Blender 场景约 6.8 宽 × 3 高；模型台房间 8×3，直接放进去 */
+  mesh.position.set(0, 0, -0.6);
+  put(mesh);
+  return mesh;
+}
 
 let furnitureMat = null;
 function buildFurniture(type, w, d, h) {

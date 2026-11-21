@@ -317,20 +317,20 @@ BED_X, BED_Y = 0.30, 3.55
 box(2.30, 1.95, 0.34, BED_X, BED_Y, 0.17, M_BEDBASE, bevel=0.03, name="bedframe")
 box(2.34, 0.16, 0.42, BED_X, BED_Y + 0.95, 0.52, M_BEDBASE, bevel=0.02, name="footboard")
 # 床垫
-soft(2.18, 1.86, 0.26, BED_X, BED_Y, 0.47, M_SHEET, 0.10, 2, 0.010, name="mattress")
+soft(2.18, 1.86, 0.26, BED_X, BED_Y, 0.47, M_SHEET, 0.10, 1, 0.0, name="mattress")
 # 被褥：大褶皱堆叠（参考图被子凌乱）
-soft(1.78, 1.02, 0.17, BED_X - 0.06, BED_Y - 0.30, 0.64, M_DUVET, 0.14, 2, 0.075,
+soft(1.78, 1.02, 0.17, BED_X - 0.06, BED_Y - 0.30, 0.64, M_DUVET, 0.14, 1, 0.0,
      (0, 0, math.radians(4)), "duvet1")
-soft(1.50, 0.64, 0.12, BED_X + 0.14, BED_Y + 0.26, 0.70, M_DUVET, 0.12, 2, 0.060,
+soft(1.50, 0.64, 0.12, BED_X + 0.14, BED_Y + 0.26, 0.70, M_DUVET, 0.12, 1, 0.0,
      (0, math.radians(-6), math.radians(-9)), "duvet2")
-soft(1.26, 0.40, 0.09, BED_X - 0.24, BED_Y + 0.52, 0.72, M_SHEET, 0.10, 2, 0.048,
+soft(1.26, 0.40, 0.09, BED_X - 0.24, BED_Y + 0.52, 0.72, M_SHEET, 0.10, 1, 0.0,
      (0, math.radians(7), math.radians(6)), "duvet3")
 # 枕头
 for px, pz in ((-0.62, 0.80), (0.52, 0.86)):
-    soft(0.72, 0.44, 0.22, BED_X + px, BED_Y + pz, 0.70, M_SHEET, 0.10, 2, 0.040,
+    soft(0.72, 0.44, 0.22, BED_X + px, BED_Y + pz, 0.70, M_SHEET, 0.10, 1, 0.0,
          (math.radians(-12), 0, random.uniform(-0.15, 0.15)), "pillow")
 # 床尾垂下的被子
-soft(1.72, 0.36, 0.26, BED_X - 0.02, BED_Y + 0.88, 0.50, M_DUVET, 0.10, 2, 0.050,
+soft(1.72, 0.36, 0.26, BED_X - 0.02, BED_Y + 0.88, 0.50, M_DUVET, 0.10, 1, 0.0,
      (math.radians(18), 0, 0), "drape")
 
 # 地毯
@@ -455,3 +455,117 @@ SC.render.image_settings.file_format = 'JPEG'
 SC.render.image_settings.quality = 92
 bpy.ops.render.render(write_still=True)
 print("NIGHT_BLENDER_DONE")
+
+
+# ============================================================ v12.4.6 导出 3D 场景
+import os
+GLB_OUT = r"D:\work_future\fucking\work10000\.tmp\nightscene\nightScene.glb"
+os.makedirs(os.path.dirname(GLB_OUT), exist_ok=True)
+
+EXCLUDE = {"citybg", "citybg2", "vol", "cityfog"}
+# 模型台尺度下看不清的小件直接不导出：几十本书、十几片叶、藤蔓、格栅，
+# 它们占了大量顶点却只贡献噪点。
+SKIP_PREFIX = ("bk", "book", "pleaf", "leaf", "vine", "slat", "stool", "pot", "tstr", "ceiling", "soffit")
+def skip_obj(ob):
+    return ob.name in EXCLUDE or ob.name.startswith(SKIP_PREFIX)
+# 玻璃与体积雾若导进几何，会变成粉白色大三角挡住房间 —— 排除掉，
+# 网页端靠城市贴图与灯光表现即可。
+EXCLUDE_MAT = {"glass", "vol", "cityfog"}
+
+def mat_color(obj):
+    """取物体主材质的基色；emissive 材质取发射色。"""
+    if not obj.data.materials:
+        return (0.5, 0.5, 0.5)
+    m = obj.data.materials[0]
+    if not m or not m.use_nodes:
+        return (0.5, 0.5, 0.5)
+    nt = m.node_tree
+    # 发射材质（灯带/火/城市塔灯）
+    for n in nt.nodes:
+        if n.type == 'EMISSION':
+            c = n.inputs["Color"].default_value
+            strength = n.inputs["Strength"].default_value
+            k = min(1.0, 0.55 + 0.18 * strength)
+            return (c[0] * k, c[1] * k, c[2] * k)
+    # 普里斯姆基色
+    for n in nt.nodes:
+        if n.type == 'BSDF_PRINCIPLED':
+            c = n.inputs["Base Color"].default_value
+            return (c[0], c[1], c[2])
+    return (0.5, 0.5, 0.5)
+
+count = 0
+tris = 0
+for ob in list(bpy.context.scene.objects):
+    if ob.type != 'MESH' or skip_obj(ob):
+        continue
+    if ob.data.materials and ob.data.materials[0] and ob.data.materials[0].name in EXCLUDE_MAT:
+        continue
+    me = ob.data
+    rgb = mat_color(ob)
+    if not me.color_attributes:
+        me.color_attributes.new(name="Col", type='BYTE_COLOR', domain='CORNER')
+    layer = me.color_attributes["Col"]
+    for i in range(len(layer.data)):
+        layer.data[i].color = (rgb[0], rgb[1], rgb[2], 1.0)
+    me.color_attributes.active_color_name = "Col"
+    count += 1
+    tris += sum(len(p.vertices) - 2 for p in me.polygons)
+
+# 压面：18 万顶点/36 万面 base64 后近 9 MB，单文件放不下。
+# 按总面积比缩到 3 万三角，靠顶点色和形体保留辨识度。
+TARGET = 45000
+if tris > TARGET:
+    ratio = TARGET / tris
+    for ob in list(bpy.context.scene.objects):
+        if ob.type != 'MESH' or skip_obj(ob):
+            continue
+        ntri = sum(len(p.vertices) - 2 for p in ob.data.polygons)
+        # 小物体（被褥/枕头/书/绿植）保留原样：统一 ratio 会把它们压成撕裂的三角片
+        if ntri < 800:
+            continue
+        # 大物体按全局比例压，但保底 0.5 不过度简化
+        r = max(0.5, ratio)
+        if r >= 1.0:
+            continue
+        dm = ob.modifiers.new('dec', 'DECIMATE')
+        dm.ratio = r
+        bpy.context.view_layer.objects.active = ob
+        bpy.ops.object.modifier_apply(modifier=dm.name)
+    tris2 = sum(sum(len(p.vertices) - 2 for p in ob.data.polygons)
+                for ob in bpy.context.scene.objects
+                if ob.type == 'MESH' and not skip_obj(ob))
+    print('DECIMATED to', tris2)
+
+print("SCENE_GLB objects", count, "tris", tris)
+
+# 把世界变换烘进顶点，再清零 object transform ——
+# 这样导出的 GLB 节点没有 TRS，顶点直接就是世界坐标，网页端不用自己解四元数。
+for ob in list(bpy.context.scene.objects):
+    if ob.type == 'MESH' and not skip_obj(ob):
+        # 手动把 matrix_world 乘进每个顶点，再清零变换
+        mw = ob.matrix_world.copy()
+        for v in ob.data.vertices:
+            v.co = mw @ v.co
+        ob.matrix_world = __import__('mathutils').Matrix.Identity(4)
+        ob.location = (0, 0, 0)
+        ob.rotation_euler = (0, 0, 0)
+        ob.scale = (1, 1, 1)
+
+# 只导出带顶点色的场景 mesh
+bpy.ops.object.select_all(action='DESELECT')
+for ob in bpy.context.scene.objects:
+    if ob.type == 'MESH' and not skip_obj(ob):
+        if ob.data.materials and ob.data.materials[0] and ob.data.materials[0].name in EXCLUDE_MAT:
+            continue
+        ob.select_set(True)
+bpy.context.view_layer.objects.active = next(
+    o for o in bpy.context.scene.objects if o.type == 'MESH' and o.name not in EXCLUDE)
+
+bpy.ops.export_scene.gltf(
+    filepath=GLB_OUT, export_format='GLB', export_apply=True,
+    export_yup=True, export_materials='EXPORT',
+    export_normals=False, export_texcoords=False,
+    export_vertex_color='ACTIVE', export_cameras=False, export_lights=False,
+    use_selection=True)
+print("SCENE_GLB_DONE", os.path.getsize(GLB_OUT))
