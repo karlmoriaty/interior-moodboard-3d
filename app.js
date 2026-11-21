@@ -10,6 +10,7 @@ import { TREE_ASSET } from './tree-mesh.js';
 import { FOREST_BG } from './forest-bg.js';
 import { FURNITURE_ASSETS } from './furniture-assets.js';
 import { CAFE_GARDEN } from './cafe-garden.js';
+import { NIGHT_RENDER } from './night-render.js';
 
 /* ============================== 0. 小工具 ============================== */
 const $ = (s) => document.querySelector(s);
@@ -3431,6 +3432,53 @@ function sceneBootstrap() {
   return { W, D, H, T, X0, X1, Z0, Z1, put, box };
 }
 
+/* v12.4.5：夜景公寓写实预览。
+   Blender Cycles 渲染的完整房间画面（blender/night-scene.py），
+   内联成 NIGHT_RENDER。作为一张平面贴在剖开房间的开口面，
+   默认显示；点「切回 3D」可回到可拖材料的程序化房间。
+   ───────────────────────────────────────────── */
+let nightPreviewMesh = null;
+let nightPreviewOn = true;   /* 切到夜景公寓时默认开写实预览 */
+
+/* 这张平面放在房间开口外侧（朝相机 +Z），正对聚焦视角。
+   房间在模型坐标里 8 宽 × 3 高，剖面开口在 Z1=+3。 */
+function makeNightPreview(put) {
+  const tex = new THREE.Texture();
+  const img = new Image();
+  img.onload = () => { tex.image = img; tex.needsUpdate = true; };
+  img.src = NIGHT_RENDER;
+  tex.colorSpace = THREE.SRGBColorSpace;
+  const mat = new THREE.MeshBasicMaterial({ map: tex, toneMapped: false, side: THREE.DoubleSide });
+  /* 房间断面 8 宽 × 3 高；渲染图 1500×880 ≈ 1.70，
+     按高 3 算宽 5.1，居中贴在房间后部，正对聚焦相机。 */
+  /* 铺满整个房间断面 8×3：图是完整房间画面，就该占满剖面，
+     缩在后面只露一小块等于没放。渲染图比例 1.70，房间 8/3=2.67，
+     按宽度 7.6 撑满、高 4.5（略超出，靠相机裁切），视觉上占满模型台。 */
+  const w = 7.6, h = w * 880 / 1500;
+  const geo = new THREE.PlaneGeometry(w, h);
+  nightPreviewMesh = new THREE.Mesh(geo, mat);
+  nightPreviewMesh.position.set(0, 2.28, -1.2);
+  nightPreviewMesh.visible = nightPreviewOn;
+  put(nightPreviewMesh);
+  applyNightPreviewMode();
+  return nightPreviewMesh;
+}
+
+/* 预览开：隐藏程序化房间（room），只留渲染图平面；
+   但平面挂在 room 下，所以不能整个隐藏 room —— 改为逐个子节点隐藏。 */
+function applyNightPreviewMode() {
+  if (!room || !nightPreviewMesh) return;
+  for (const child of room.children) {
+    if (child === nightPreviewMesh) continue;
+    /* 地板等底座保留，让渲染图有「立在房间里」的支撑感 */
+    if (child.userData && child.userData.keepInPreview) { child.visible = true; continue; }
+    child.visible = !nightPreviewOn;
+  }
+  /* 家具层也一起隐藏（渲染图里已经有床和家具） */
+  if (PIECES) PIECES.visible = !nightPreviewOn;
+}
+
+
 /* ---- 场景二：林间咖啡馆 ---- */
 function buildSceneCafe() {
   const { W, D, H, T, X0, X1, Z0, put, box } = sceneBootstrap();
@@ -3703,8 +3751,9 @@ function buildSceneNight() {
   const black = new THREE.MeshStandardMaterial({ color: 0x111317, roughness: 0.42, metalness: 0.4 });
   const blueMat = new THREE.MeshBasicMaterial({ color: 0x2a9fed, toneMapped: false });
 
-  /* 深色木地板 */
-  box(W, T, D, 0, -T / 2, 0, surfaceMat.floor, false);
+  /* 深色木地板 —— 打标记：写实预览模式保留它当图的底座 */
+  const nightFloor = box(W, T, D, 0, -T / 2, 0, surfaceMat.floor, false);
+  nightFloor.userData.keepInPreview = true;
   box(T, H, D, X0 - T / 2, H / 2, 0, surfaceMat.wallSide);
 
   /* 通高落地窗：四扇黑框玻璃，窗外城市 */
@@ -3803,6 +3852,10 @@ function buildSceneNight() {
     ['plant', 1.7, -2.6, 0.2],
     ['candle', -1.45, -2.3, 0],
   ];
+
+  /* v12.4.5：把 Blender 写实渲染图放进模型台。
+     默认显示；「切回 3D」按钮会隐藏它并恢复程序化房间。 */
+  makeNightPreview(put);
 
   return {
     id: 'night', name: '夜景公寓', hour: 21.2,
@@ -4020,6 +4073,11 @@ function applySceneSnapshot(snap) {
 
 /* 切换场景：保存当前 → 拆房间 → 建新房间 → 恢复该场景数据 */
 /* 场景切换器的渲染：每个场景一张卡，选中态高亮 */
+function syncNightPreviewLabel() {
+  const pv = document.getElementById('night-preview-toggle');
+  if (pv) pv.textContent = nightPreviewOn ? '切回 3D 编辑' : '看写实预览图';
+}
+
 function renderSceneTabs() {
   const host = document.getElementById('scene-list');
   const hint = document.getElementById('scene-hint');
@@ -4042,6 +4100,26 @@ function renderSceneTabs() {
     }
     host.dataset.count = String(ids.length);
   }
+  /* v12.4.5：夜景公寓的「写实预览 / 3D 编辑」切换。
+     只在该场景出现，避免打扰另外三套。 */
+  let pv = document.getElementById('night-preview-toggle');
+  if (!pv) {
+    pv = document.createElement('button');
+    pv.id = 'night-preview-toggle';
+    pv.className = 'night-pv';
+    pv.type = 'button';
+    pv.addEventListener('click', () => {
+      nightPreviewOn = !nightPreviewOn;
+      if (nightPreviewMesh) nightPreviewMesh.visible = nightPreviewOn;
+      applyNightPreviewMode();
+      syncNightPreviewLabel();
+      toast(nightPreviewOn ? '已切到写实预览（Blender 渲染图）' : '已切回 3D 编辑，可拖动材料');
+    });
+    host.after(pv);
+  }
+  pv.hidden = state.scene !== 'night';
+  if (state.scene === 'night') syncNightPreviewLabel();
+
   for (const b of host.children) {
     const on = b.dataset.s === state.scene;
     b.classList.toggle('on', on);
@@ -4264,6 +4342,7 @@ function furnitureGeom(name) {
   geo.computeVertexNormals();
   return geo;
 }
+
 
 let furnitureMat = null;
 function buildFurniture(type, w, d, h) {

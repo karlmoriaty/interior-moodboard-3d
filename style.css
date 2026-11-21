@@ -562,3 +562,7 @@ kbd,code{
 .scene-list .scene.on::before { background: var(--accent); }
 .scene-list .scene.on b { color: var(--accent); }
 .scene-hint { margin: 7px 0 0; font-size: 10.5px; line-height: 1.5; color: var(--ink-faint, rgba(244,238,228,.44)); }
+/* v12.4.5：夜景公寓的写实预览切换，克制的中性灰小按钮 */
+.night-pv { display: block; width: 100%; margin-top: 7px; padding: 6px 8px; border: 1px solid rgba(244,238,228,.14); border-radius: 5px; background: rgba(244,238,228,.04); color: rgba(244,238,228,.72); font-size: 10.5px; cursor: pointer; letter-spacing: .02em; }
+.night-pv:hover { background: rgba(244,238,228,.09); color: rgba(244,238,228,.9); }
+.night-pv[hidden] { display: none; }
