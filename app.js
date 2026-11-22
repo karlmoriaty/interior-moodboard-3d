@@ -698,6 +698,7 @@ function applySceneHemi(id) {
   /* 公寓专属装饰（阳台植物等 scene.add 的对象）只在公寓显示，
      否则会像这次一样悬在雾林窗外。 */
   if (typeof aptOnly !== 'undefined' && aptOnly) aptOnly.visible = (id === 'night');
+
   const v = SCENE_HEMI[id];
   if (v !== undefined) hemi.intensity = v;
 }
@@ -3514,7 +3515,7 @@ function applyNight3DMode() {
     }
     child.visible = false;   /* 程序化房间被 3D 场景几何替代 */
   }
-  if (PIECES) PIECES.visible = false;
+
 }
 /* ---- 场景二：咖啡小馆 ---- */
 function buildSceneCafe() {
@@ -3911,18 +3912,20 @@ function buildSceneNight() {
   rugM.receiveShadow = true;
   put(rugM);
 
-  initialPieces = [
-    ['bed', 0.4, -1.25, 0],
-    ['shelf', -3.45, -1.6, Math.PI / 2],
-    ['sideTable', -1.45, -2.05, 0],
-    ['sideTable', 2.35, -2.05, 0],
-    ['lamp', 2.8, 0.4, 0],
-    ['candle', -1.45, -2.3, 0],
-  ];
+  /* v13.0.1：清空初始家具。
+     build-night-v2.py 建的 3D 场景已自带床 / 壁炉 / 书架 / 落地灯 / 矮凳 / 绿植，
+     这里再摆一遍就是重叠（用户看到的「两个床重合」）。
+     用户自己放的家具仍然保留，不受影响。 */
+  initialPieces = [];
 
   /* v12.4.8：只展示 Blender 导出的 3D 场景几何。
      模型台就是模型台，不放平面图。 */
   makeNight3D(put);
+  /* v13.0.1：这两句之前漏了 —— applyNight3DMode 只定义没调用，
+     PIECES 一直可见，于是家具库的床和 3D 场景自带的床叠在一起
+     （用户看到的「两个床重合」）。 */
+  applyNight3DMode();
+  applySceneHemi('night');
 
   return {
     id: 'night', name: '夜景公寓', hour: 21.2,
@@ -4058,7 +4061,7 @@ const SCENES = {
 };
 
 /* v12.8：布局改动（钢琴朝向）必须让旧存档失效，否则 applySceneDefaults 不会跑 */
-const STORAGE_KEY = 'moodroom:scenes:v10';
+const STORAGE_KEY = 'moodroom:scenes:v11';
 
 /* 把 PIECES 里当前的摆放压成可序列化数组 */
 function snapshotPieces() {
