@@ -67,10 +67,10 @@ def finish(obj, name, smooth=True):
     return obj
 
 
-C_SNOW = (0.760, 0.810, 0.880)       # 积雪（偏蓝）
-C_SNOW_HI = (0.860, 0.900, 0.955)    # 迎光雪面
-C_NEEDLE = (0.048, 0.078, 0.070)     # 针叶（深蓝绿）
-C_NEEDLE_FAR = (0.038, 0.055, 0.062)  # 远处更暗
+C_SNOW = (0.880, 0.915, 0.960)       # 积雪（偏蓝）
+C_SNOW_HI = (0.965, 0.985, 1.000)    # 迎光雪面
+C_NEEDLE = (0.070, 0.108, 0.092)     # 针叶（深蓝绿）
+C_NEEDLE_FAR = (0.050, 0.072, 0.080)  # 远处更暗
 C_TRUNK = (0.042, 0.038, 0.036)      # 树干近黑
 C_TRUNK_FAR = (0.030, 0.032, 0.040)
 
@@ -106,9 +106,9 @@ for poly in me.polygons:
     # 用面中心 y 判断远近
     cy = sum(me.vertices[v].co.y for v in poly.vertices) / len(poly.vertices)
     t = min(1.0, max(0.0, (-cy - 0.5) / 14.0))
-    r = C_SNOW_HI[0] * (1 - t) + C_SNOW[0] * 0.55 * t
-    g = C_SNOW_HI[1] * (1 - t) + C_SNOW[1] * 0.58 * t
-    b = C_SNOW_HI[2] * (1 - t) + C_SNOW[2] * 0.66 * t
+    r = C_SNOW_HI[0] * (1 - t) + C_SNOW[0] * 0.82 * t
+    g = C_SNOW_HI[1] * (1 - t) + C_SNOW[1] * 0.84 * t
+    b = C_SNOW_HI[2] * (1 - t) + C_SNOW[2] * 0.90 * t
     for li in poly.loop_indices:
         layer.data[li].color = (r, g, b, 1.0)
 me.materials.append(ensure_mat())
@@ -255,7 +255,7 @@ bpy.ops.object.bake(type='AO', margin=3)
 col = me.color_attributes["Col"]
 for i in range(len(col.data)):
     c = col.data[i].color
-    k = 0.55 + 0.45 * ao.data[i].color[0]
+    k = 0.50 + 0.50 * ao.data[i].color[0]
     col.data[i].color = (c[0] * k, c[1] * k, c[2] * k, 1.0)
 me.color_attributes.remove(ao)
 me.color_attributes.active_color_name = "Col"
