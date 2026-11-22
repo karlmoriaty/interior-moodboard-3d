@@ -3652,9 +3652,12 @@ function buildSceneCafe() {
   /* 板子 7.2×4.2（保持图 1.71 比例）贴在墙外 0.10 m：
      略大于窗洞即可 —— 放大到 22×11 会让窗洞只采到图中间那块均匀暖雾，
      反而变成一片米色。贴墙后边缘藏在墙后，斜看也看不见板边。 */
-  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(7.2, 4.2),
+  /* v12.7.0：板必须落在房间高度内（0~H），否则从俯视看就是屋顶外一块竖板。
+     尺寸只比窗洞略大 0.2，z 压到窗外 0.03 —— 边被窗框和墙完全挡住。 */
+  const bgH = Math.min(H - 0.06, 2.96);
+  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(7.0, bgH),
     new THREE.MeshBasicMaterial({ map: gardenTex, fog: false, toneMapped: false }));
-  skyCard.position.set(0, 1.55, Z0 - 0.10);
+  skyCard.position.set(0, bgH / 2 + 0.02, Z0 - 0.03);
   put(skyCard);
 
   /* 地毯 */
@@ -3923,9 +3926,13 @@ function buildSceneForest() {
   roomViewTex = { day: t, night: t };
   /* v12.5.4：同咖啡馆 —— 贴墙 + 放大，板边不进视野 */
   const winW = WIN.x1 - WIN.x0, winH = WIN.y1 - WIN.y0;
-  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(winW + 0.6, (winW + 0.6) * 656 / 1120),
+  /* v12.7.0：按图比例算高度会到 4.51 米，超出 3 米层高 ——
+     改成锁定窗洞高度（2.74）以内，宽度按同比例回算。 */
+  const fH = Math.min(H - 0.06, 2.86);
+  const fW = fH * 1120 / 656;
+  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(fW, fH),
     new THREE.MeshBasicMaterial({ map: t, fog: false, toneMapped: false }));
-  skyCard.position.set(0, (WIN.y0 + WIN.y1) / 2, Z0 - 0.10);
+  skyCard.position.set(0, Math.min((WIN.y0 + WIN.y1) / 2, H / 2), Z0 - 0.03);
   put(skyCard);
 
   /* 串灯：沿窗上沿垂下来的暖黄灯泡 */
