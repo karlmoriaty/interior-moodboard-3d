@@ -697,7 +697,7 @@ function applySceneHemi(id) {
   currentSceneId = id;
   /* 公寓专属装饰（阳台植物等 scene.add 的对象）只在公寓显示，
      否则会像这次一样悬在雾林窗外。 */
-  if (typeof aptOnly !== 'undefined' && aptOnly) aptOnly.visible = (id === 'night');
+  if (typeof aptOnly !== 'undefined' && aptOnly) aptOnly.visible = false;
 
   const v = SCENE_HEMI[id];
   if (v !== undefined) hemi.intensity = v;
@@ -3508,13 +3508,18 @@ function sceneBootstrap() {
    只留 Blender 导出的 3D 场景几何（isNight3D 标记）。 */
 function applyNight3DMode() {
   if (!room) return;
-  for (const child of room.children) {
-    if (child.userData && child.userData.isNight3D) {
-      child.visible = true;
-      continue;
+  /* v13.2：必须用 traverse 而不是 children。
+     room 里有一批构件被放进了嵌套 group（灯带、光晕平面等），
+     只遍历一层会漏掉它们 —— 那些平面悬在 1.8~3.8 米高，
+     从室内看就是窗口上方一块巨大的斜板。 */
+  room.traverse((o) => {
+    if (o === room) return;
+    if (o.userData && o.userData.isNight3D) {
+      o.visible = true;
+      return;
     }
-    child.visible = false;   /* 程序化房间被 3D 场景几何替代 */
-  }
+    o.visible = false;   /* 程序化房间被 3D 场景几何替代 */
+  });
 
 }
 /* ---- 场景二：咖啡小馆 ---- */
@@ -5650,7 +5655,11 @@ function setHour(h, silent) {
   /* 模型内的点光：距离缩了 s 倍，强度要缩 s² 才等价（衰减是 1/d²） */
   /* v7.1：从 2.6 压到 1.7 —— 参考图里房间的亮度主要来自蜡烛，不是顶灯 */
   coveLight.intensity = lampK * 1.05 * MODEL_SCALE_SQ;
-  cove.visible = lampK > 0.04;
+  /* v13.2：夜景公寓用 3D 场景替代程序化房间，这盏灯槽必须一直关着。
+     原来只靠 applyNight3DMode 设一次 visible=false，但这一行每帧都会
+     按 lampK 重新赋值，直接把它覆盖回来 —— 那根 3 米长的黑色灯槽
+     就悬在窗前，看着像一块斜跨的黑板。 */
+  cove.visible = currentSceneId !== 'night' && lampK > 0.04;
   wallGlow.material.opacity = lampK * 0.13;
   floorPool.material.opacity = lampK * 0.30;
   windowCast.material.opacity = lampK * 0.52;
