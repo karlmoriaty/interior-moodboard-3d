@@ -76,10 +76,12 @@ C_TRUNK_FAR = (0.030, 0.032, 0.040)
 
 # ============================== 雪地 ==============================
 # 细分平面 + 噪声起伏。范围要盖住整个窗洞视野（x ±8，y -0.4 ~ -18）
-bpy.ops.mesh.primitive_plane_add(size=1, location=(0, -12.0, 0))
+# 雪地范围只需盖住窗外视野：窗洞 7.76 宽，视距 3 米看出去
+# 最多 10 米就够，26 米会一直铺到城市背景前面。
+bpy.ops.mesh.primitive_plane_add(size=1, location=(0, -5.0, 0))
 ground = bpy.context.object
 ground.name = "snowGround"
-ground.scale = (22.0, 26.0, 1)
+ground.scale = (12.5, 9.0, 1)
 bpy.ops.object.transform_apply(scale=True)
 bpy.ops.object.mode_set(mode='EDIT')
 bpy.ops.mesh.subdivide(number_cuts=44)
@@ -187,33 +189,31 @@ def pine(name, x, y, height, base_r, layers=5, far=False):
 # 近景不能太近：放 3~5 米外、高度压到 3 米上下，
 # 否则一棵树就把整扇窗堵满，看不出森林的纵深。
 for i, (px, py, h, r) in enumerate([
-    (-4.2, -3.4, 3.4, 0.78),
-    (-1.6, -4.6, 3.8, 0.86),
-    (2.2, -3.2, 3.1, 0.72),
-    (4.6, -5.0, 3.6, 0.82),
-    (-6.8, -6.2, 3.2, 0.74),
-    (7.2, -7.4, 3.0, 0.70),
+    (-3.6, -2.6, 3.2, 0.74),
+    (-1.2, -3.4, 3.5, 0.80),
+    (1.8, -2.4, 2.9, 0.68),
+    (3.8, -3.8, 3.3, 0.76),
 ]):
     pine("near%d" % i, px, py, h, r, 6)
 
 # 中景：大小错落
-for i in range(24):
-    px = random.uniform(-9.0, 9.0)
-    py = random.uniform(-6.0, -13.0)
+for i in range(14):
+    px = random.uniform(-5.4, 5.4)
+    py = random.uniform(-3.8, -6.6)
     h = random.uniform(2.2, 3.6)
     pine("mid%d" % i, px, py, h, h * 0.22, 5)
 
 # 远景：暗剪影，压出纵深
-for i in range(16):
-    px = random.uniform(-12.0, 12.0)
-    py = random.uniform(-14.0, -22.0)
+for i in range(8):
+    px = random.uniform(-6.0, 6.0)
+    py = random.uniform(-6.8, -8.8)
     h = random.uniform(2.0, 3.2)
     pine("far%d" % i, px, py, h, h * 0.20, 4, far=True)
 
 # ============================== 地面雪堆 ==============================
 for i in range(8):
-    px = random.uniform(-4.5, 4.5)
-    py = random.uniform(-1.2, -5.0)
+    px = random.uniform(-3.6, 3.6)
+    py = random.uniform(-1.0, -3.2)
     sr = random.uniform(0.35, 0.9)
     bpy.ops.mesh.primitive_uv_sphere_add(segments=10, ring_count=6, radius=sr,
                                          location=(px, py, sr * 0.18))

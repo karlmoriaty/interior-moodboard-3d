@@ -3175,6 +3175,9 @@ function buildSceneWarm() {
     new THREE.PlaneGeometry(2.9, 1.68),
     new THREE.MeshBasicMaterial({ map: null, toneMapped: false }),
   );
+  skyCard.visible = true;
+  if (typeof cityView !== 'undefined') cityView.visible = true;
+  if (typeof cityOverlay !== 'undefined') cityOverlay.visible = true;
   skyCard.position.set(0, 1.7, Z0 - 0.24);
   room.add(skyCard);
   
@@ -3652,6 +3655,9 @@ function buildSceneCafe() {
      放大看就是一块绿色荧幕，和室内的暖光完全不在一个世界。
      换成 Blender 渲染的雾中花园：前景粉紫花丛、深绿灌木、
      远处木屋暖光窗、薄雾 + 强景深虚化（f/0.55），几何感被虚化吃掉。 */
+  if (skyCard) skyCard.visible = true;
+  if (typeof cityView !== 'undefined') cityView.visible = true;
+  if (typeof cityOverlay !== 'undefined') cityOverlay.visible = true;
   const gardenTex = (() => {
     const t = new THREE.Texture();
     const img = new Image();
@@ -3817,6 +3823,9 @@ function buildSceneNight() {
   const cityMat = new THREE.MeshBasicMaterial({ map: viewTex.night, fog: false, toneMapped: false });
   skyCard = new THREE.Mesh(new THREE.PlaneGeometry(W + 1.2, H + 0.4), cityMat);
   skyCard.position.set(0, H / 2, Z0 - 0.5);
+  skyCard.visible = true;
+  if (typeof cityView !== 'undefined') cityView.visible = true;
+  if (typeof cityOverlay !== 'undefined') cityOverlay.visible = true;
   put(skyCard);
   roomViewTex = { day: viewTex.day, night: viewTex.night };
 
@@ -3942,6 +3951,13 @@ function buildSceneForest() {
   roomViewTex = { day: t, night: t };
   /* v12.5.4：同咖啡馆 —— 贴墙 + 放大，板边不进视野 */
   const winW = WIN.x1 - WIN.x0, winH = WIN.y1 - WIN.y0;
+  /* 雾林不用平面 skyCard：城市贴图会在树缝里透出来 */
+  if (skyCard) skyCard.visible = false;
+  /* cityView / cityOverlay 是直接 scene.add 的全局城市背景，
+     不属于 room，dropRoom 清不掉 —— 必须单独隐藏，否则树缝里全是楼。 */
+  if (typeof cityView !== 'undefined') cityView.visible = false;
+  if (typeof cityOverlay !== 'undefined') cityOverlay.visible = false;
+
   /* v12.9：窗外改成真正的三维雪夜松林。
      原来的平面贴图有两个硬伤：高度受限导致宽度只有 4.88 米（窗洞 7.76）、
      斜视时就是一块卡片。3D 场景没有这两个问题。 */
