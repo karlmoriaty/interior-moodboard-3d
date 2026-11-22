@@ -36,13 +36,23 @@ function glb(file) {
   const p = json.meshes[0].primitives[0];
   const rawCol = read(p.attributes.COLOR_0);
   const ca = json.accessors[p.attributes.COLOR_0];
-  const col = new Uint8Array(rawCol.length);
-  if (ca.componentType === 5126) {
-    for (let i = 0; i < rawCol.length; i++) col[i] = Math.round(Math.min(1, Math.max(0, rawCol[i])) * 255);
-  } else {
-    for (let i = 0; i < rawCol.length; i++) col[i] = rawCol[i];
-  }
   const vCount = json.accessors[p.attributes.POSITION].count;
+  /* 颜色必须归一化成 RGB 三分量再写：
+     1) Blender 可能导出 VEC4（RGBA），按 3 步进读会整体错位 → 彩虹色
+     2) componentType 可能是 5123（u16, 0~65535），直接塞 Uint8 会截断
+     统一走「按顶点、按通道归一化到 0~255」。 */
+  const comps = Math.round(rawCol.length / vCount);
+  const col = new Uint8Array(vCount * 3);
+  for (let i = 0; i < vCount; i++) {
+    for (let k = 0; k < 3; k++) {
+      const v = rawCol[i * comps + k];
+      let b8;
+      if (ca.componentType === 5126) b8 = Math.round(Math.min(1, Math.max(0, v)) * 255);
+      else if (ca.componentType === 5123) b8 = Math.round(Math.min(1, v / 65535) * 255);
+      else b8 = v;
+      col[i * 3 + k] = b8;
+    }
+  }
   const rawUV = p.attributes.TEXCOORD_0 !== undefined ? read(p.attributes.TEXCOORD_0) : null;
   const uv = new Uint16Array(rawUV ? rawUV.length : vCount * 2);
   if (rawUV) {

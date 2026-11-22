@@ -3983,7 +3983,9 @@ function buildSceneForest() {
 
   initialPieces = [
     ['bed', 0.55, -1.35, 0],
-    ['piano', -3.05, -1.55, 0],
+    /* 钢琴键盘朝房间内侧（-π/2 把 -x 转向 +z）：
+       原来键盘朝左墙，从相机只看得到琴盖背面，像一块大板。 */
+    ['piano', -3.05, -1.55, -Math.PI / 2],
     ['stool', -2.15, -0.75, 0],
     ['sideTable', -1.35, -2.05, 0],
     ['sideTable', 2.55, -2.05, 0],
@@ -4018,7 +4020,8 @@ const SCENES = {
   forest: { build: buildSceneForest, label: '雾林卧室', hint: '雨雾杉林 · 格子窗与床' },
 };
 
-const STORAGE_KEY = 'moodroom:scenes:v9';
+/* v12.8：布局改动（钢琴朝向）必须让旧存档失效，否则 applySceneDefaults 不会跑 */
+const STORAGE_KEY = 'moodroom:scenes:v10';
 
 /* 把 PIECES 里当前的摆放压成可序列化数组 */
 function snapshotPieces() {
@@ -4970,7 +4973,7 @@ function makeTree() {
   return g;
 }
 
-function makePiano() { return buildFurniture('piano', 1.9, 1.35, 1.02); }
+function makePiano() { return buildFurniture('piano', 2.84, 1.49, 1.15); }
 
 /* ---------- v7.1：烛光组 ---------- */
 /* 参考图的氛围一半来自蜡烛：茶几上、地上、边几上全是。
@@ -5681,7 +5684,7 @@ const FURNITURE = [
   { id: 'cornerSofa', name: '转角沙发', sub: '2.62 m' },
   { id: 'fireplace', name: '悬挂壁炉', sub: 'h 2.60' },
   { id: 'tree', name: '圣诞树', sub: '1.85 m' },
-  { id: 'piano', name: '三角钢琴', sub: '1.90 m' },
+  { id: 'piano', name: '三角钢琴', sub: '2.84 m' },
   { id: 'candleCluster', name: '烛光组', sub: '5 支' },
   { id: 'candleStand', name: '烛台', sub: 'h 1.26' },
 ];
