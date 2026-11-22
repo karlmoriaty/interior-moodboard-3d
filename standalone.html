@@ -55486,6 +55486,10 @@ const BED_V2 = {
 function dropRoom(oldRoom) {
   if (!oldRoom) return;
   oldRoom.traverse((o) => {
+    /* 共享 3D 场景（公寓城市楼群 / 雾林雪林）是缓存复用的单例，
+       几何一旦 dispose，下次进场景拿到的是空 mesh ——
+       公寓城市消失就是这么来的。它们只脱离父级，不销毁。 */
+    if (o.userData && (o.userData.isNight3D || o.userData.isForest3D)) return;
     if (o.isMesh && o.geometry && !o.userData.sharedGeom) {
       o.geometry.dispose();
     }
@@ -60010,6 +60014,7 @@ function decodeForestScene() {
   forestSceneMesh = new THREE.Mesh(g, mat);
   forestSceneMesh.rotation.y = Math.PI;
   forestSceneMesh.position.set(0, 0, -3);
+  forestSceneMesh.userData.isForest3D = true;
   forestSceneMesh.castShadow = false;
   forestSceneMesh.receiveShadow = false;
   return forestSceneMesh;
@@ -60035,6 +60040,7 @@ function makeForestSky() {
     new THREE.PlaneGeometry(48, 26),
     new THREE.MeshBasicMaterial({ map: tex, fog: false, toneMapped: false }),
   );
+  forestSky.userData.isForest3D = true;
   forestSky.position.set(0, 8, -26);
   return forestSky;
 }
