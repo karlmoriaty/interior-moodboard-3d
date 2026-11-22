@@ -59299,15 +59299,15 @@ function buildSceneNight() {
   /* 窗上横档 */
   box(W - 0.2, 0.07, 0.1, 0, 2.95, Z0 + 0.06, black);
 
-  /* 窗外城市：3D 场景（build-night-v3.py）自带了楼群几何，
-     全局 cityView（19×8.5 大平面）会从窗口上方斜跨进室内，
-     skyCard 也会贴着 3D 场景的窗再叠一层 —— 两个都关掉。 */
+  /* 窗外城市：3D 场景（build-night-v3.py）自带的楼群只是近景剪影，
+     真正的城市景观由全局 cityView 提供 —— 两个都要有。
+     skyCard 保持关闭：它会贴着 3D 场景的窗再叠一层平面，出现重影。 */
   const cityMat = new THREE.MeshBasicMaterial({ map: viewTex.night, fog: false, toneMapped: false });
   skyCard = new THREE.Mesh(new THREE.PlaneGeometry(W + 1.2, H + 0.4), cityMat);
   skyCard.position.set(0, H / 2, Z0 - 0.5);
   skyCard.visible = false;
-  if (typeof cityView !== 'undefined') cityView.visible = false;
-  if (typeof cityOverlay !== 'undefined') cityOverlay.visible = false;
+  if (typeof cityView !== 'undefined') cityView.visible = true;
+  if (typeof cityOverlay !== 'undefined') cityOverlay.visible = true;
   put(skyCard);
   roomViewTex = { day: viewTex.day, night: viewTex.night };
 
@@ -59439,8 +59439,11 @@ function buildSceneForest() {
      之前我做成 3D 雪林，但设计上要的是同一套城市高楼 —— 复用即可，
      不做特殊背景。
      skyCard 必须隐藏：它是全局对象，会停在上一个房间的 Z0 位置，
-     留着会在雾林窗后形成一块错位的贴图。城市背景由 cityView 提供。 */
+     留着会在窗后形成一块错位的贴图。城市背景由全局 cityView 提供 ——
+     必须显式打开，否则继承上一个场景（比如夜景公寓）关掉的状态。 */
   if (skyCard) skyCard.visible = false;
+  if (typeof cityView !== 'undefined') cityView.visible = true;
+  if (typeof cityOverlay !== 'undefined') cityOverlay.visible = true;
 
   /* 串灯：沿窗上沿垂下来的暖黄灯泡 */
   const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffd89a, toneMapped: false });
