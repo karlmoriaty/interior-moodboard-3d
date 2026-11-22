@@ -695,6 +695,9 @@ const SCENE_HEMI = { warm: 0.60, cafe: 0.26, night: 0.12, forest: 0.30 };
 let currentSceneId = 'warm';
 function applySceneHemi(id) {
   currentSceneId = id;
+  /* 公寓专属装饰（阳台植物等 scene.add 的对象）只在公寓显示，
+     否则会像这次一样悬在雾林窗外。 */
+  if (typeof aptOnly !== 'undefined' && aptOnly) aptOnly.visible = (id === 'night');
   const v = SCENE_HEMI[id];
   if (v !== undefined) hemi.intensity = v;
 }
@@ -1835,6 +1838,13 @@ const cushionTex = (() => {
   t.colorSpace = THREE.SRGBColorSpace;
   return t;
 })();
+/* v12.9.5：公寓专属装饰组。
+   这一批对象都是 scene.add() 直接挂到场景根的（不走 room），
+   dropRoom 清不掉 —— 切到雾林时它们就悬在窗外。
+   统一收进 aptOnly，由 applySceneHemi 按场景显隐。 */
+const aptOnly = new THREE.Group();
+scene.add(aptOnly);
+
 const cushionMat = new THREE.MeshStandardMaterial({
   map: cushionTex, roughness: 0.96, metalness: 0,
   emissive: 0x1c1d16, emissiveIntensity: 0.42,
@@ -1846,7 +1856,7 @@ for (const dx of [-1.5, 0.05, 1.6]) {
   cu.rotation.y = (dx * 0.06);
   cu.castShadow = true;
   cu.receiveShadow = true;
-  scene.add(cu);
+  aptOnly.add(cu);
 }
 
 /* 模型台下的一圈细光：标出"这是房间里的一处展示位" */
@@ -1856,7 +1866,7 @@ const aptPlinthGlow = new THREE.Mesh(
 );
 aptPlinthGlow.rotation.x = -Math.PI / 2;
 aptPlinthGlow.position.set(0, TABLE.h + 0.003, TABLE.z);
-scene.add(aptPlinthGlow);
+aptOnly.add(aptPlinthGlow);
 
 /* 左墙矮边柜 2.1 m：离地 0.14 的四条黑钢腿 + 深木柜体 + 门缝 + 黄铜把手。
    实心一块板会读成"黑箱子"，柜子必须有离地、有分件。 */
@@ -2141,7 +2151,7 @@ const aptPot = new THREE.Mesh(
 );
 aptPot.position.set(APT.halfW - 0.75, PLANT_Y + 0.20, PLANT_Z);
 aptPot.castShadow = true;
-scene.add(aptPot);
+aptOnly.add(aptPot);
 const aptLeafMat = new THREE.MeshStandardMaterial({ color: 0x35502f, roughness: 0.9, side: THREE.DoubleSide });
 for (let i = 0; i < 11; i++) {
   const a = (i / 11) * Math.PI * 2;
@@ -2153,7 +2163,7 @@ for (let i = 0; i < 11; i++) {
   );
   leaf.rotation.set(Math.sin(a) * 0.42, 0, -Math.cos(a) * 0.42);
   leaf.castShadow = true;
-  scene.add(leaf);
+  aptOnly.add(leaf);
 }
 
 /* 左墙一道推拉障子门：和室里没有平开门。
@@ -3955,18 +3965,12 @@ function buildSceneForest() {
   roomViewTex = { day: t, night: t };
   /* v12.5.4：同咖啡馆 —— 贴墙 + 放大，板边不进视野 */
   const winW = WIN.x1 - WIN.x0, winH = WIN.y1 - WIN.y0;
-  /* 雾林不用平面 skyCard：城市贴图会在树缝里透出来 */
+  /* v12.9.5：雾林窗外和其他三个房间一样，直接用全局城市背景。
+     之前我做成 3D 雪林，但设计上要的是同一套城市高楼 —— 复用即可，
+     不做特殊背景。
+     skyCard 必须隐藏：它是全局对象，会停在上一个房间的 Z0 位置，
+     留着会在雾林窗后形成一块错位的贴图。城市背景由 cityView 提供。 */
   if (skyCard) skyCard.visible = false;
-  /* cityView / cityOverlay 是直接 scene.add 的全局城市背景，
-     不属于 room，dropRoom 清不掉 —— 必须单独隐藏，否则树缝里全是楼。 */
-  if (typeof cityView !== 'undefined') cityView.visible = false;
-  if (typeof cityOverlay !== 'undefined') cityOverlay.visible = false;
-
-  /* v12.9：窗外改成真正的三维雪夜松林。
-     原来的平面贴图有两个硬伤：高度受限导致宽度只有 4.88 米（窗洞 7.76）、
-     斜视时就是一块卡片。3D 场景没有这两个问题。 */
-  put(makeForestSky());
-  put(decodeForestScene());
 
   /* 串灯：沿窗上沿垂下来的暖黄灯泡 */
   const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffd89a, toneMapped: false });
