@@ -15,6 +15,19 @@ import { BED_V2 } from './bed-v2-assets.js';
 import { PLANTS_ASSETS } from './plants-assets.js';
 import { FOREST_SCENE } from './forest-scene-assets.js';
 
+
+/* v12.9.1：场景 room 换新时必须摘掉旧的，否则旧房间的全部几何
+   （包括窗外 3D 雪林）会留在场景树里继续渲染，直接穿到别的场景外面。 */
+function dropRoom(oldRoom) {
+  if (!oldRoom) return;
+  oldRoom.traverse((o) => {
+    if (o.isMesh && o.geometry && !o.userData.sharedGeom) {
+      o.geometry.dispose();
+    }
+  });
+  oldRoom.removeFromParent();
+}
+
 /* ============================== 0. 小工具 ============================== */
 const $ = (s) => document.querySelector(s);
 const $$ = (s) => Array.from(document.querySelectorAll(s));
@@ -3029,8 +3042,9 @@ function buildSceneWarm() {
     surfaceMat[k] = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0 });
   }
 
+    dropRoom(room);
     room = new THREE.Group();
-  MODEL.add(room);
+    MODEL.add(room);
   
   const W = ROOM_W, D = ROOM_D, H = ROOM_H, T = ROOM_T;
   const X0 = RB_X0, X1 = RB_X1, Z0 = RB_Z0, Z1 = RB_Z1;
@@ -3456,6 +3470,7 @@ function sceneBootstrap() {
     if (surfaceMat[k]) surfaceMat[k].dispose();
     surfaceMat[k] = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0 });
   }
+  dropRoom(room);
   room = new THREE.Group();
   MODEL.add(room);
   const W = ROOM_W, D = ROOM_D, H = ROOM_H, T = ROOM_T;
