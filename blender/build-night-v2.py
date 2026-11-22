@@ -226,16 +226,57 @@ ball(0.155, LX, LY, 1.36, M_BULB, "lampball")
 cyl(0.26, 0.38, 2.55, 1.15, 0.19, M_WOOD, "stool")
 cyl(0.30, 0.045, 2.55, 1.15, 0.41, M_WOOD, "stooltop")
 
-# 窗台绿植
-cyl(0.13, 0.22, 3.30, 0.42, 0.11, M_BRICK, "pot")
-for i in range(7):
-    a = i * 0.95
-    bpy.ops.mesh.primitive_ico_sphere_add(subdivisions=1, radius=0.13,
-        location=(3.30 + 0.10 * math.cos(a), 0.42 + 0.10 * math.sin(a),
-                  0.32 + (i % 3) * 0.11))
-    o = bpy.context.object
-    o.name = "leaf%d" % i
-    o.data.materials.append(M_PLANT)
+# 窗台绿植：虎尾兰（和家具库的 plantSansevieria 同一形态）
+# 原来是 7 个 icosphere 当叶子 —— 和家具库的塑料感同源，换成真实叶形。
+def leaf_mesh(name, length, width, x, y, z, rot_z, tilt, col):
+    bm = bmesh.new()
+    rows = []
+    seg, wseg = 12, 3
+    for i in range(seg + 1):
+        t = i / seg
+        s_ = math.sin(math.pi * min(1.0, t ** 0.85))
+        w = width * 0.85 + (width - width * 0.85) * (s_ ** 1.15)
+        w *= 1.0 - abs(t - 0.18) * 0.55
+        w = max(w, 0.003)
+        yy = t * length
+        zz = -0.05 * (t ** 1.8) * length
+        row = []
+        for j in range(wseg + 1):
+            u = j / wseg * 2 - 1
+            row.append(bm.verts.new((u * w * 0.5, yy, zz - 0.03 * (u ** 2) * w * 2.0)))
+        rows.append(row)
+    for i in range(seg):
+        for j in range(wseg):
+            try:
+                bm.faces.new((rows[i][j], rows[i][j + 1], rows[i + 1][j + 1], rows[i + 1][j]))
+            except ValueError:
+                pass
+    bm.normal_update()
+    me = bpy.data.meshes.new(name)
+    bm.to_mesh(me)
+    bm.free()
+    ob = bpy.data.objects.new(name, me)
+    bpy.context.collection.objects.link(ob)
+    bpy.context.view_layer.objects.active = ob
+    sol = ob.modifiers.new("s", 'SOLIDIFY')
+    sol.thickness = 0.006
+    bpy.ops.object.modifier_apply(modifier=sol.name)
+    ob.data.materials.append(M_PLANT)
+    ob.location = (x, y, z)
+    # make_leaf 沿 +Y 生成；绕 X 轴 +90° 立起来，再绕 Z 摆向
+    ob.rotation_euler = (math.radians(90 + tilt), 0, rot_z)
+    bpy.ops.object.transform_apply(location=True, rotation=True, scale=True)
+    return ob
+
+import bmesh
+cyl(0.12, 0.20, 3.30, 0.42, 0.10, M_BRICK, "pot")
+for i in range(6):
+    a = i * 1.05
+    r = 0.028 + (i % 3) * 0.022
+    leaf_mesh("sansleaf%d" % i,
+              0.34 + (i % 4) * 0.075, 0.055 + (i % 3) * 0.008,
+              3.30 + math.cos(a) * r, 0.42 + math.sin(a) * r, 0.19,
+              a, math.cos(a) * 8, M_PLANT)
 
 # ============================== 灯带 ==============================
 # 顶部暖黄折线（参考图沿吊顶边缘走）
