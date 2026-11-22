@@ -13,6 +13,7 @@ import { CAFE_GARDEN } from './cafe-garden.js';
 import { NIGHT_SCENE } from './night-scene-assets.js';
 import { BED_V2 } from './bed-v2-assets.js';
 import { PLANTS_ASSETS } from './plants-assets.js';
+import { FOREST_SCENE } from './forest-scene-assets.js';
 
 /* ============================== 0. 小工具 ============================== */
 const $ = (s) => document.querySelector(s);
@@ -3926,14 +3927,11 @@ function buildSceneForest() {
   roomViewTex = { day: t, night: t };
   /* v12.5.4：同咖啡馆 —— 贴墙 + 放大，板边不进视野 */
   const winW = WIN.x1 - WIN.x0, winH = WIN.y1 - WIN.y0;
-  /* v12.7.0：按图比例算高度会到 4.51 米，超出 3 米层高 ——
-     改成锁定窗洞高度（2.74）以内，宽度按同比例回算。 */
-  const fH = Math.min(H - 0.06, 2.86);
-  const fW = fH * 1120 / 656;
-  skyCard = new THREE.Mesh(new THREE.PlaneGeometry(fW, fH),
-    new THREE.MeshBasicMaterial({ map: t, fog: false, toneMapped: false }));
-  skyCard.position.set(0, Math.min((WIN.y0 + WIN.y1) / 2, H / 2), Z0 - 0.03);
-  put(skyCard);
+  /* v12.9：窗外改成真正的三维雪夜松林。
+     原来的平面贴图有两个硬伤：高度受限导致宽度只有 4.88 米（窗洞 7.76）、
+     斜视时就是一块卡片。3D 场景没有这两个问题。 */
+  put(makeForestSky());
+  put(decodeForestScene());
 
   /* 串灯：沿窗上沿垂下来的暖黄灯泡 */
   const bulbMat = new THREE.MeshBasicMaterial({ color: 0xffd89a, toneMapped: false });
@@ -4475,6 +4473,76 @@ function furnitureGeom(name) {
    走和家具相同的 GLB 管线，合并成一个带顶点色的 BufferGeometry。
    这才是真正的模型台：有深度、能旋转，不是贴一张平面图。
    ─────────────────────────────────────────────────────────────────────── */
+
+/* ============================ v12.9 雾林 3D 雪夜松林 ============================
+   原来窗外是一张 1120×656 的 JPEG 贴在平面上：
+   高度锁在 2.86 米后宽度只有 4.88 米，而窗洞宽 7.76 米 —— 两侧露白；
+   而且平面在任何斜角下都只是「一块卡片」。
+   现在换成 Blender 建的真实三维空间（雪地 + 41 棵雪松 + 雪堆），
+   坐标约定同夜景场景：Blender y<0 是窗外，旋转 π 后 z = y - 3。
+   ─────────────────────────────────────────────────────────────────────────── */
+let forestSceneMesh = null;
+
+function decodeForestScene() {
+  if (forestSceneMesh) return forestSceneMesh;
+  const bin = Uint8Array.from(atob(FOREST_SCENE.data), (c) => c.charCodeAt(0));
+  const dv = new DataView(bin.buffer);
+  const vCount = dv.getUint32(0, true);
+  let o = 8;
+  const pos = new Float32Array(vCount * 3);
+  for (let i = 0; i < pos.length; i++) { pos[i] = dv.getFloat32(o, true); o += 4; }
+  const col = new Uint8Array(bin.buffer, o, vCount * 4); o += vCount * 4;
+  const idxCount = (bin.length - o) / 2;
+  const idxArr = new Uint16Array(idxCount);
+  for (let i = 0; i < idxCount; i++) { idxArr[i] = dv.getUint16(o, true); o += 2; }
+
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  const c01 = new Float32Array(vCount * 3);
+  for (let i = 0; i < vCount; i++) {
+    c01[i * 3] = col[i * 4] / 255;
+    c01[i * 3 + 1] = col[i * 4 + 1] / 255;
+    c01[i * 3 + 2] = col[i * 4 + 2] / 255;
+  }
+  g.setAttribute('color', new THREE.BufferAttribute(c01, 3));
+  g.setIndex(new THREE.BufferAttribute(idxArr, 1));
+  g.computeVertexNormals();
+
+  const mat = new THREE.MeshBasicMaterial({
+    vertexColors: true, side: THREE.DoubleSide, fog: false,
+  });
+  forestSceneMesh = new THREE.Mesh(g, mat);
+  forestSceneMesh.rotation.y = Math.PI;
+  forestSceneMesh.position.set(0, 0, -3);
+  forestSceneMesh.castShadow = false;
+  forestSceneMesh.receiveShadow = false;
+  return forestSceneMesh;
+}
+
+/* 夜空底：雪林之外不能露虚空，一张深蓝到近黑的渐变放在很远 */
+let forestSky = null;
+function makeForestSky() {
+  if (forestSky) return forestSky;
+  const c = document.createElement('canvas');
+  c.width = 4;
+  c.height = 128;
+  const g2 = c.getContext('2d');
+  const grd = g2.createLinearGradient(0, 0, 0, 128);
+  grd.addColorStop(0, '#0a1020');
+  grd.addColorStop(0.55, '#141d33');
+  grd.addColorStop(1, '#243046');
+  g2.fillStyle = grd;
+  g2.fillRect(0, 0, 4, 128);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  forestSky = new THREE.Mesh(
+    new THREE.PlaneGeometry(48, 26),
+    new THREE.MeshBasicMaterial({ map: tex, fog: false, toneMapped: false }),
+  );
+  forestSky.position.set(0, 8, -26);
+  return forestSky;
+}
+
 let nightRoomMesh = null;
 
 function decodeNightScene() {
