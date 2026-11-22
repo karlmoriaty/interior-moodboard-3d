@@ -12,6 +12,7 @@ import { FURNITURE_ASSETS } from './furniture-assets.js';
 import { CAFE_GARDEN } from './cafe-garden.js';
 import { NIGHT_SCENE } from './night-scene-assets.js';
 import { BED_V2 } from './bed-v2-assets.js';
+import { PLANTS_ASSETS } from './plants-assets.js';
 
 /* ============================== 0. 小工具 ============================== */
 const $ = (s) => document.querySelector(s);
@@ -672,7 +673,10 @@ scene.environmentIntensity = 0.3;
 const hemi = new THREE.HemisphereLight(0xdfe9ff, 0x6d5844, 0.6);
 /* v12.5.4：环境光按场景切换。逆光/夜景要压暗，白天场景保持 0.6。 */
 const SCENE_HEMI = { warm: 0.60, cafe: 0.26, night: 0.12, forest: 0.30 };
+/* 当前场景 id 也在这里同步 —— 植物按场景选品种要用它 */
+let currentSceneId = 'warm';
 function applySceneHemi(id) {
+  currentSceneId = id;
   const v = SCENE_HEMI[id];
   if (v !== undefined) hemi.intensity = v;
 }
@@ -4330,7 +4334,76 @@ function bedV2Geometry() {
   return g;
 }
 
+/* v12.6：四种植物按场景分配 —— 每个房间一种，互不重复。
+   数据来自 blender/build-plants.py，叶片按叶形函数生成（不是压扁的球）。 */
+const PLANT_BY_SCENE = {
+  warm: 'plantMonstera',      /* 暖光客厅：龟背竹 */
+  cafe: 'plantCactus',        /* 林间咖啡馆：柱状仙人掌 */
+  night: 'plantSansevieria',  /* 夜景公寓：虎尾兰 */
+  forest: 'plantFiddle',      /* 雾林卧室：琴叶榕 */
+};
+let plantBuf = null;
+let plantRanges = null;
+const plantGeoCache = {};
+
+function plantIndexByName(name) {
+  return PLANTS_ASSETS.names.indexOf(name);
+}
+
+function plantGeometry(name) {
+  const key = name;
+  if (plantGeoCache[key]) return plantGeoCache[key];
+
+  if (!plantBuf) {
+    plantBuf = Uint8Array.from(atob(PLANTS_ASSETS.data), (c) => c.charCodeAt(0));
+    /* 头 12 字节 × 株数：顶点数 / 索引数 / u32 标志 */
+    plantRanges = [];
+    let o = 0;
+    for (let k = 0; k < PLANTS_ASSETS.names.length; k++) {
+      const dv = new DataView(plantBuf.buffer);
+      const n = dv.getUint32(o, true);
+      const ic = dv.getUint32(o + 4, true);
+      const u32 = dv.getUint32(o + 8, true) === 1;
+      const size = 12 + n * 16 + ic * (u32 ? 4 : 2);
+      plantRanges.push({ start: o, n, ic, u32, size });
+      o += size;
+    }
+  }
+
+  const idx = plantIndexByName(name);
+  if (idx < 0) return null;
+  const R = plantRanges[idx];
+  const dv = new DataView(plantBuf.buffer);
+  let o = R.start + 12;
+  const pos = new Float32Array(R.n * 3);
+  for (let i = 0; i < R.n * 3; i++) { pos[i] = dv.getFloat32(o, true); o += 4; }
+  const c8 = new Uint8Array(plantBuf.buffer, o, R.n * 4); o += R.n * 4;
+  const color = new Float32Array(R.n * 3);
+  for (let i = 0; i < R.n; i++) {
+    color[i * 3] = c8[i * 4] / 255;
+    color[i * 3 + 1] = c8[i * 4 + 1] / 255;
+    color[i * 3 + 2] = c8[i * 4 + 2] / 255;
+  }
+  const arr = R.u32 ? new Uint32Array(R.ic) : new Uint16Array(R.ic);
+  for (let i = 0; i < R.ic; i++) {
+    arr[i] = R.u32 ? dv.getUint32(o, true) : dv.getUint16(o, true);
+    o += R.u32 ? 4 : 2;
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  g.setAttribute('color', new THREE.BufferAttribute(color, 3));
+  g.setIndex(new THREE.BufferAttribute(arr, 1));
+  g.computeVertexNormals();
+  plantGeoCache[key] = g;
+  return g;
+}
+
 function furnitureGeom(name) {
+  if (name === 'plant') {
+    const nm = PLANT_BY_SCENE[currentSceneId] || 'plantMonstera';
+    const g = plantGeometry(nm);
+    if (g) return g;
+  }
   if (name === 'bed') return bedV2Geometry();
   if (!furnitureCache) {
     const raw = atob(FURNITURE_ASSETS.data);
