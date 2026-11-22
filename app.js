@@ -3516,7 +3516,7 @@ function applyNight3DMode() {
   }
   if (PIECES) PIECES.visible = false;
 }
-/* ---- 场景二：林间咖啡馆 ---- */
+/* ---- 场景二：咖啡小馆 ---- */
 function buildSceneCafe() {
   const { W, D, H, T, X0, X1, Z0, put, box } = sceneBootstrap();
   const wood = new THREE.MeshStandardMaterial({ color: 0x3a291c, roughness: 0.82 });
@@ -3802,7 +3802,7 @@ function buildSceneCafe() {
 
   applySceneHemi('cafe');
   return {
-    id: 'cafe', name: '林间咖啡馆', hour: 17.4,
+    id: 'cafe', name: '咖啡小馆', hour: 17.4,
     mats: {
       floor: ['wood', 'smoked'], wallBack: ['paint', 'ash'], wallSide: ['wood', 'walnut'],
       sofa: ['fabric', 'linen'], rug: ['fabric', 'tweed'], woodwork: ['wood', 'walnut'],
@@ -3933,7 +3933,7 @@ function buildSceneNight() {
   };
 }
 
-/* ---- 场景四：雾林卧室（重做：加串灯、琴凳、球形台灯、格纹毯） ---- */
+/* ---- 场景四：居家主卧（重做：加串灯、琴凳、球形台灯、格纹毯） ---- */
 function buildSceneForest() {
   const { W, D, H, T, X0, X1, Z0, put, box } = sceneBootstrap();
   const black = new THREE.MeshStandardMaterial({ color: 0x16181a, roughness: 0.5, metalness: 0.28 });
@@ -4037,7 +4037,7 @@ function buildSceneForest() {
 
   applySceneHemi('forest');
   return {
-    id: 'forest', name: '雾林卧室', hour: 9.4,
+    id: 'forest', name: '居家主卧', hour: 9.4,
     mats: {
       floor: ['wood', 'oak'], wallBack: ['paint', 'ash'], wallSide: ['paint', 'ash'],
       sofa: ['fabric', 'linen'], rug: ['fabric', 'boucle'], woodwork: ['wood', 'oak'],
@@ -4052,9 +4052,9 @@ function buildSceneForest() {
 const SCENES = {
   /* warm 放第一位：首次打开的默认场景就是它 */
   warm:   { build: buildSceneWarm,   label: '暖光客厅', hint: '雪夜别墅 · 玻璃幕墙与烛光' },
-  cafe:   { build: buildSceneCafe,   label: '林间咖啡馆', hint: '拱窗花园 · 吧台与藤椅' },
+  cafe:   { build: buildSceneCafe,   label: '咖啡小馆', hint: '拱窗街景 · 吧台与藤椅' },
   night:  { build: buildSceneNight,  label: '夜景公寓', hint: '城市夜色 · 暗调与蓝灯带' },
-  forest: { build: buildSceneForest, label: '雾林卧室', hint: '雨雾杉林 · 格子窗与床' },
+  forest: { build: buildSceneForest, label: '居家主卧', hint: '落地窗 · 木地板与床' },
 };
 
 /* v12.8：布局改动（钢琴朝向）必须让旧存档失效，否则 applySceneDefaults 不会跑 */
@@ -4385,9 +4385,9 @@ function bedV2Geometry() {
    数据来自 blender/build-plants.py，叶片按叶形函数生成（不是压扁的球）。 */
 const PLANT_BY_SCENE = {
   warm: 'plantMonstera',      /* 暖光客厅：龟背竹 */
-  cafe: 'plantCactus',        /* 林间咖啡馆：柱状仙人掌 */
+  cafe: 'plantCactus',        /* 咖啡小馆：柱状仙人掌 */
   night: 'plantSansevieria',  /* 夜景公寓：虎尾兰 */
-  forest: 'plantFiddle',      /* 雾林卧室：琴叶榕 */
+  forest: 'plantFiddle',      /* 居家主卧：琴叶榕 */
 };
 let plantBuf = null;
 let plantRanges = null;
