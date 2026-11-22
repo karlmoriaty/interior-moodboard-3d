@@ -3834,13 +3834,15 @@ function buildSceneNight() {
   /* 窗上横档 */
   box(W - 0.2, 0.07, 0.1, 0, 2.95, Z0 + 0.06, black);
 
-  /* 窗外城市：复用项目已有的实拍夜景（city-photo.js 内联，零外部依赖） */
+  /* 窗外城市：3D 场景（build-night-v3.py）自带了楼群几何，
+     全局 cityView（19×8.5 大平面）会从窗口上方斜跨进室内，
+     skyCard 也会贴着 3D 场景的窗再叠一层 —— 两个都关掉。 */
   const cityMat = new THREE.MeshBasicMaterial({ map: viewTex.night, fog: false, toneMapped: false });
   skyCard = new THREE.Mesh(new THREE.PlaneGeometry(W + 1.2, H + 0.4), cityMat);
   skyCard.position.set(0, H / 2, Z0 - 0.5);
-  skyCard.visible = true;
-  if (typeof cityView !== 'undefined') cityView.visible = true;
-  if (typeof cityOverlay !== 'undefined') cityOverlay.visible = true;
+  skyCard.visible = false;
+  if (typeof cityView !== 'undefined') cityView.visible = false;
+  if (typeof cityOverlay !== 'undefined') cityOverlay.visible = false;
   put(skyCard);
   roomViewTex = { day: viewTex.day, night: viewTex.night };
 
