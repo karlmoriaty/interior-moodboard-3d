@@ -2671,7 +2671,7 @@ const roomSigns = [];
    真实玻璃右下角一定有这个，所以它「本来就该在那儿」。
    做法：不画底色，只用极淡的白色文字压在玻璃上，靠反光才看得见。 */
 {
-  const W2 = 0.052, H2 = 0.020;
+  const W2 = 0.078, H2 = 0.030;
   const PX = 1400;                     // 每米像素
   const c = document.createElement('canvas');
   c.width = Math.round(W2 * PX);
@@ -2714,7 +2714,7 @@ const roomSigns = [];
   const p = new THREE.Mesh(
     new THREE.PlaneGeometry(W2, H2),
     new THREE.MeshBasicMaterial({
-      map: tex, transparent: true, opacity: 0.9,
+      map: tex, transparent: true, opacity: 0.95,
       depthWrite: false, depthTest: false, toneMapped: false, side: THREE.DoubleSide,
     }),
   );
