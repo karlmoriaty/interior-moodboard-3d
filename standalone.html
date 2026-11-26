@@ -58179,11 +58179,12 @@ const roomSigns = [];
   const p = new THREE.Mesh(
     new THREE.PlaneGeometry(W2, H2),
     new THREE.MeshBasicMaterial({
-      map: tex, transparent: true, opacity: 0.85,
-      depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
+      map: tex, transparent: true, opacity: 0.9,
+      depthWrite: false, depthTest: false, toneMapped: false, side: THREE.DoubleSide,
     }),
   );
   p.name = 'sign-glass';
+  p.renderOrder = 999;
   p.position.set(-3.10, 0.34, -2.945);   // 窗玻璃左下角（贴后墙内侧）
   MODEL.add(p);
   roomSigns.push(p);
