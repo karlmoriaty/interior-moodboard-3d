@@ -670,7 +670,8 @@ kbd,code{
   <p><b>光。</b>右侧那根竖线就是一天：往上拉是清晨，往下拉是深夜。太阳的角度、颜色和整个房间的亮度都跟着它走，天黑以后灯会自动亮。</p>
   <p><b>读数。</b>左边三个数是这间房此刻的脾气。<b>亮</b>来自浅色表面和天光，<b>暖</b>来自暖色材料和低角度的光，<b>静</b>来自深色表面和一小片灯光。它们只是参考，多数房间是三样混着的。</p>
   <p><b>视角。</b>左键拖动绕着屋子转，即时跟手、松手即停，这样转完就能直接点面或拖家具。滚轮平滑拉近拉远。按住<kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd>可以在房间里挪动观察位置（左右横移、上下升降），范围有限不会穿墙。按 <kbd>R</kbd> 回到默认视角。</p>
-  <p class="keys">快捷键：<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 换情绪 · <kbd>[</kbd><kbd>]</kbd> 拨时间 · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销 · <kbd>R</kbd> 回到默认视角 · 方向键挪动视角 · 焦点在时间轴上时上下键仍拨时间</p>
+  <p><b>走进去。</b>按 <kbd>F</kbd>，相机会降到人的高度，直接站在这间屋里——此时用 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 或方向键前后左右走动，按住左键拖动可以转头看四周。走到墙边会停住，不会穿出去。再按一次 <kbd>F</kbd> 回到模型台外面。</p>
+  <p class="keys">快捷键：<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 换情绪 · <kbd>[</kbd><kbd>]</kbd> 拨时间 · <kbd>F</kbd> 进出漫游 · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销 · <kbd>R</kbd> 回到默认视角 · 方向键挪动视角 · 焦点在时间轴上时上下键仍拨时间</p>
   <p class="keys">画面经过电影级后期：亮部辉光、ACES 色调映射、暗角与胶片颗粒。加 <code>?nopost=1</code> 可关闭后期作对照。</p>
 </dialog>
 
@@ -55968,6 +55969,23 @@ const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerH
    主体仍占约 26%，挂画、边柜、矮凳、整面高窗都完整入画；拉到 6.2 主体又缩成小摆件。
    phi 越大相机越低：层高提到 3.9 后 phi 1.34 机位约 2.4 m，既不吃天花黑带，
    俯角也够看清模型台内部。 */
+/* ---- 房间内漫游（v13.6）----
+   第一人称进入模型内部：坐标用房间局部米（和家具同一套），
+   渲染时再乘 MODEL_SCALE 加到模型台的位置上。
+   这样「走两米」就是走过两米的房间距离，与家具尺寸天然一致。 */
+const walk = {
+  on: false,
+  x: 0,            // 房间局部 X（米）
+  z: 2.1,          // 局部 Z：从前墙附近起步，正对窗户
+  yaw: 0,          // 0 = 面朝 -Z（朝窗）；顺时针为正
+  pitch: 0,
+  velX: 0,
+  velZ: 0,
+  eye: 1.62,       // 眼高（局部米）
+  fov: 62,         // 漫游时的视场角，比外部略广
+  savedFov: 0,
+};
+
 const orbit = {
   target: new THREE.Vector3(-0.25, 1.22, -1.15),
   radius: 5.4, theta: 0.62, phi: 1.34,          // 当前值（渲染用）
@@ -56043,7 +56061,14 @@ const WALL_MARGIN = 0.55;
 /* 平移上限（米）：跟着 11.2×10.0×3.9 的新房间放宽，
    否则房间大了却只能挪原来那一小步，方向键会显得没用。 */
 const PAN_LIMIT = { x: 2.4, y: 1.0, z: 1.9 };
-const PAN_KEYS = new Set(['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown']);
+/* v13.6：把 WASD 也收进来 —— 漫游模式要读它们。
+   注意 panStep 只认 Arrow*，所以外部视角下按 WASD 不会有任何位移，
+   不会和原有方向键平移打架。 */
+const PAN_KEYS = new Set([
+  'ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown',
+  'w', 'a', 's', 'd', 'W', 'A', 'S', 'D',
+]);
+const WALK_KEYS = new Set(['w', 'a', 's', 'd', 'W', 'A', 'S', 'D']);
 const heldPanKeys = new Set();
 /* 手感按通道分开：这是编辑器，要精确点面/拖家具，视角必须跟手、停得住。
    实测过"展示型 3D"的长阻尼 + 甩动惯性在这里是灾难：拖拽后第一帧还差 77%，
@@ -56058,6 +56083,23 @@ const RADIUS_LAMBDA = 12;      // 滚轮推拉平滑（与拾取无关，保留�
 const dampK = (lambda, dt) => 1 - Math.exp(-lambda * dt);
 
 function placeCamera() {
+  /* 漫游模式：相机放在房间内部，按局部分米算好再缩放 */
+  if (walk.on) {
+    const s2 = MODEL_SCALE;
+    const cp = Math.cos(walk.pitch);
+    camera.position.set(
+      walk.x * s2,
+      walk.eye * s2 + MODEL_BASE_Y,
+      walk.z * s2 + TABLE.z,
+    );
+    /* 朝向：yaw=0 看向 -Z（窗），pitch 抬头为正 */
+    camera.lookAt(
+      camera.position.x - Math.sin(walk.yaw) * cp,
+      camera.position.y + Math.sin(walk.pitch),
+      camera.position.z - Math.cos(walk.yaw) * cp,
+    );
+    return;
+  }
   const r = orbit.radius, p = orbit.phi, t = orbit.theta;
   const tx = orbit.target.x + orbit.pan.x;
   const ty = orbit.target.y + orbit.pan.y;
@@ -61986,6 +62028,13 @@ window.addEventListener('keydown', (e) => {
      事件也可能派发到 window/document，此时 target 不是 Node，contains 会抛错。 */
   const onRail = e.target === rail
     || (e.target instanceof Node && rail && rail.contains(e.target));
+  /* v13.6：漫游切换要独立判断 —— 之前写进 PAN_KEYS 分支里，
+     而 f 不在方向键集合中，那段代码永远不会执行。 */
+  if (e.key === 'f' || e.key === 'F') {
+    e.preventDefault();
+    walk.on ? exitWalk() : enterWalk();
+    return;
+  }
   if (PAN_KEYS.has(e.key) && !onRail) {
     e.preventDefault();
     heldPanKeys.add(e.key);
@@ -62223,15 +62272,100 @@ function frameStep(now) {
   /* dt 上限 0.05 s：切回标签页时不会一次跳很远 */
   const dt = Math.min(0.05, Math.max(0.001, (now - lastFrameT) / 1000 || 0.016));
   /* 每帧都调 panStep（即便没按键）——松键后速度要在这里衰减到零，才有滑停 */
-  const panMoving = panStep(heldPanKeys, dt);
+  /* 漫游模式下屏蔽 orbit 平移，否则两套位移会打架 */
+  const walkMoving = walkStep(dt);
+  const panMoving = walk.on ? false : panStep(heldPanKeys, dt);
   const orbitMoving = dampOrbit(dt);
-  if (panMoving || orbitMoving) { placeCamera(); needsRender = true; }
+  if (panMoving || orbitMoving || walkMoving) { placeCamera(); needsRender = true; }
   lastFrameT = now;
   if (!needsRender) return;
   needsRender = false;
   renderFrame();
 }
 renderer.setAnimationLoop(frameStep);
+
+/* ---- 漫游步进：WASD / 方向键平移，鼠标拖动转向 ----
+   加速度用和 orbit.pan 同一套阻尼，手感一致。
+   碰撞只做墙体（内缩 WALK_MARGIN），家具不挡 —— 房间本来就不大，
+   家具的包围盒会把可行走区切得很碎，反而不如让人穿过去。 */
+const WALK_SPEED = 1.65;      // 米/秒（局部）
+const WALK_ACCEL = 11;
+const WALK_MARGIN = 0.34;     // 离墙最小距离
+function walkStep(dt) {
+  if (!walk.on) return false;
+  const keys = heldPanKeys;
+  let fwd = 0, side = 0;
+  if (keys.has('w') || keys.has('W') || keys.has('ArrowUp')) fwd += 1;
+  if (keys.has('s') || keys.has('S') || keys.has('ArrowDown')) fwd -= 1;
+  if (keys.has('a') || keys.has('A') || keys.has('ArrowLeft')) side -= 1;
+  if (keys.has('d') || keys.has('D') || keys.has('ArrowRight')) side += 1;
+  /* 斜向不该更快 */
+  const n = Math.hypot(fwd, side) || 1;
+  const f = fwd / n, sd = side / n;
+  /* 前方向 = (-sin yaw, -cos yaw)；右方向 = (cos yaw, -sin yaw) */
+  const sy = Math.sin(walk.yaw), cy = Math.cos(walk.yaw);
+  const wantX = (-sy * f + cy * sd) * WALK_SPEED;
+  const wantZ = (-cy * f - sy * sd) * WALK_SPEED;
+  const k = Math.min(1, WALK_ACCEL * dt);
+  walk.velX += (wantX - walk.velX) * k;
+  walk.velZ += (wantZ - walk.velZ) * k;
+  const moving = Math.abs(walk.velX) + Math.abs(walk.velZ) > 0.004;
+  if (!moving && !fwd && !side) { walk.velX = 0; walk.velZ = 0; return false; }
+  walk.x += walk.velX * dt;
+  walk.z += walk.velZ * dt;
+  /* 墙体夹紧 */
+  walk.x = Math.max(RB_X0 + WALK_MARGIN, Math.min(RB_X1 - WALK_MARGIN, walk.x));
+  walk.z = Math.max(RB_Z0 + WALK_MARGIN, Math.min(RB_Z1 - WALK_MARGIN, walk.z));
+  return true;
+}
+
+/* 进入 / 退出漫游 */
+function enterWalk() {
+  if (walk.on) return;
+  walk.on = true;
+  walk.savedFov = camera.fov;
+  camera.fov = walk.fov;
+  camera.updateProjectionMatrix();
+  /* 从当前视角的反方向起步：面朝窗 */
+  walk.x = 0.2; walk.z = RB_Z1 - 1.1;
+  walk.yaw = 0; walk.pitch = -0.04;
+  walk.velX = 0; walk.velZ = 0;
+  document.body.classList.add('walking');
+  placeCamera();
+  markDirty();
+  toast('漫游中 · WASD / 方向键移动 · 拖动转向 · F 退出');
+}
+function exitWalk() {
+  if (!walk.on) return;
+  walk.on = false;
+  camera.fov = walk.savedFov || 50;
+  camera.updateProjectionMatrix();
+  document.body.classList.remove('walking');
+  placeCamera();
+  markDirty();
+  toast('已退出漫游');
+}
+
+/* 漫游时鼠标拖动转向：复用画布的 pointermove，只在 walk.on 时生效 */
+let walkDrag = null;
+canvasEl.addEventListener('pointerdown', (e) => {
+  if (!walk.on) return;
+  walkDrag = { x: e.clientX, y: e.clientY };
+  canvasEl.setPointerCapture && canvasEl.setPointerCapture(e.pointerId);
+});
+canvasEl.addEventListener('pointermove', (e) => {
+  if (!walk.on || !walkDrag) return;
+  const dx = e.clientX - walkDrag.x;
+  const dy = e.clientY - walkDrag.y;
+  walkDrag.x = e.clientX;
+  walkDrag.y = e.clientY;
+  walk.yaw += dx * 0.0032;
+  walk.pitch = Math.max(-0.85, Math.min(0.85, walk.pitch - dy * 0.0026));
+  placeCamera();
+  needsRender = true;
+});
+canvasEl.addEventListener('pointerup', () => { walkDrag = null; });
+canvasEl.addEventListener('pointercancel', () => { walkDrag = null; });
 
 /* 交互后手动标脏 */
 ['pointermove', 'pointerdown', 'pointerup', 'wheel'].forEach((ev) =>
