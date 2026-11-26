@@ -58099,6 +58099,97 @@ plateTable.position.set(1.02, TABLE.h + 0.004, -0.66);
 scene.add(plateTable);
 LINK_SPOTS.push({ mesh: plateTable, url: 'https://github.com/karlmoriaty', label: '在 GitHub 上看 karlmoriaty' });
 
+/* ---- v13.5：第二空间（公寓本体）的三处署名 ----
+   和桌面那块的区别：桌面上是「展示物的落款」，这三处是「建筑构件自带的标牌」。
+   所以都做得更小、更暗、位置更偏 —— 不做成明显的入口，只在凑近时被发现。
+   三块都挂在 scene 上（不随场景重建），由 applySceneHemi 控制只在暖光客厅显示：
+   它们的位置是按客厅的窗台/地面算的，跑到别的房间会悬空。 */
+const roomSigns = [];
+
+/* ③ 窗台板铜牌：窗台右端，不是正中。尺寸只有桌面那块的四分之一。
+   真实世界的石材窗台确实会嵌品牌标，所以不需要解释。 */
+{
+  const p = brassPlateMesh(0.085, 0.032, 'karlmoriaty', 'mmxxvi');
+  p.name = 'sign-sill';
+  p.rotation.x = -Math.PI / 2;
+  p.rotation.z = Math.PI - 0.028;      // 和桌面那块同向，但偏角更小，像随手摆的
+  p.position.set(-1.20, 0.395, -2.88);
+  MODEL.add(p);   // 房间内部坐标，挂 MODEL 才跟着缩放
+  roomSigns.push(p);
+  LINK_SPOTS.push({ mesh: p, url: 'https://github.com/karlmoriaty', label: '在 GitHub 上看 karlmoriaty' });
+}
+
+/* ④ 地板嵌铜牌：进门左前方，靠墙，避开动线正中。
+   俯视时落在视野里，是这三处里最容易被看到的一块。 */
+{
+  const p = brassPlateMesh(0.092, 0.092, 'K · M', 'MMXXVI');
+  p.name = 'sign-floor';
+  p.rotation.x = -Math.PI / 2;
+  p.rotation.z = 0.045;
+  p.position.set(-2.52, 0.004, 1.92);
+  MODEL.add(p);
+  roomSigns.push(p);
+  LINK_SPOTS.push({ mesh: p, url: 'https://github.com/karlmoriaty', label: '在 GitHub 上看 karlmoriaty' });
+}
+
+/* ⑤ 玻璃角标：仿钢化玻璃的蚀刻认证标。
+   真实玻璃右下角一定有这个，所以它「本来就该在那儿」。
+   做法：不画底色，只用极淡的白色文字压在玻璃上，靠反光才看得见。 */
+{
+  const W2 = 0.052, H2 = 0.020;
+  const PX = 1400;                     // 每米像素
+  const c = document.createElement('canvas');
+  c.width = Math.round(W2 * PX);
+  c.height = Math.round(H2 * PX);
+  const g = c.getContext('2d');
+  c.width = Math.round(W2 * PX);
+  const cw = c.width, ch = c.height;
+  g.clearRect(0, 0, cw, ch);
+  /* 圆角细边框，像蚀刻的标 */
+  g.strokeStyle = 'rgba(226,238,246,.42)';
+  g.lineWidth = Math.max(1.5, ch * 0.018);
+  const r = ch * 0.14, pad = ch * 0.09;
+  g.beginPath();
+  g.moveTo(pad + r, pad);
+  g.lineTo(cw - pad - r, pad);
+  g.quadraticCurveTo(cw - pad, pad, cw - pad, pad + r);
+  g.lineTo(cw - pad, ch - pad - r);
+  g.quadraticCurveTo(cw - pad, ch - pad, cw - pad - r, ch - pad);
+  g.lineTo(pad + r, ch - pad);
+  g.quadraticCurveTo(pad, ch - pad, pad, ch - pad - r);
+  g.lineTo(pad, pad + r);
+  g.quadraticCurveTo(pad, pad, pad + r, pad);
+  g.closePath();
+  g.stroke();
+  /* 三行小字：认证名 / 署名 / 规格年份 */
+  g.textAlign = 'center';
+  g.textBaseline = 'middle';
+  g.fillStyle = 'rgba(230,241,249,.50)';
+  g.font = `600 ${Math.round(ch * 0.20)}px "Helvetica Neue", Arial, sans-serif`;
+  g.fillText('TEMPERED', cw / 2, ch * 0.30);
+  g.fillStyle = 'rgba(230,241,249,.42)';
+  g.font = `400 ${Math.round(ch * 0.155)}px "Helvetica Neue", Arial, sans-serif`;
+  g.fillText('karlmoriaty', cw / 2, ch * 0.54);
+  g.fillStyle = 'rgba(230,241,249,.30)';
+  g.font = `400 ${Math.round(ch * 0.125)}px "Helvetica Neue", Arial, sans-serif`;
+  g.fillText('8 mm  ·  MMXXVI', cw / 2, ch * 0.76);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.anisotropy = 8;
+  const p = new THREE.Mesh(
+    new THREE.PlaneGeometry(W2, H2),
+    new THREE.MeshBasicMaterial({
+      map: tex, transparent: true, opacity: 0.85,
+      depthWrite: false, toneMapped: false, side: THREE.DoubleSide,
+    }),
+  );
+  p.name = 'sign-glass';
+  p.position.set(-3.10, 0.34, -2.945);   // 窗玻璃左下角（贴后墙内侧）
+  MODEL.add(p);
+  roomSigns.push(p);
+  LINK_SPOTS.push({ mesh: p, url: 'https://github.com/karlmoriaty', label: '在 GitHub 上看 karlmoriaty' });
+}
+
 /* ② 縁側台上的小立牌：立在台右端、朝房间内侧微侧，像展厅的作品标签。
    杆 + 斜板，板面朝相机方向。 */
 {
@@ -62440,16 +62531,23 @@ if (location.search.includes('selftest')) {
   /* 署名铭牌：两块都在场、坐标在场景内、链接正确、能被射线拾取到。
      拾取必须在屏幕上的实际位置试，不能拿世界坐标冒充。 */
   step('signPlates', () => {
-    if (LINK_SPOTS.length !== 2) return `FAIL(count=${LINK_SPOTS.length})`;
-    const urls = LINK_SPOTS.map((s) => s.url).sort().join('|');
+    if (LINK_SPOTS.length !== 5) return `FAIL(count=${LINK_SPOTS.length})`;
+    /* 三处新署名和桌面那块指向同一个仓库，所以按集合去重后应仍只有 2 个不同链接 */
+    const urls = [...new Set(LINK_SPOTS.map((s) => s.url))].sort().join('|');
     const want = 'https://github.com/karlmoriaty|https://x.com/karlmoriaty';
     if (urls !== want) return `FAIL(urls=${urls})`;
     /* 逐一投影到屏幕，再在该像素上做射线拾取，确认点得到自己 */
+    /* 三处第二空间署名按设计就藏在视野边缘（窗台右端 / 门口地面 / 玻璃下角），
+       默认机位下本来就不在画面里 —— 对它们只要求「在本场景可见时不报错」，
+       不要求必须落在当前视口内；桌面与缘侧台那两块仍然严格检查。 */
     const hitOk = LINK_SPOTS.every((s) => {
+      if (!s.mesh.visible) return true;
+      const centered = s.mesh.name === 'sign-table' || s.mesh.name === 'sign-engawa';
       const p = s.mesh.getWorldPosition(new THREE.Vector3()).project(camera);
       const cx = (p.x * 0.5 + 0.5) * window.innerWidth;
       const cy = (-p.y * 0.5 + 0.5) * window.innerHeight;
-      if (cx < 0 || cx > window.innerWidth || cy < 0 || cy > window.innerHeight) return false;
+      const onScreen = cx >= 0 && cx <= window.innerWidth && cy >= 0 && cy <= window.innerHeight;
+      if (!onScreen) return !centered;   // 角落署名允许出画，主角铭牌不允许
       const got = pickLink({ clientX: cx, clientY: cy });
       return got && got.mesh === s.mesh;
     });
