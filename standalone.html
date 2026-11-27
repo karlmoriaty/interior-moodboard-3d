@@ -55990,6 +55990,12 @@ const walk = {
   savedFov: 0,
 };
 
+/* v13.8：游览态统一禁止编辑。
+   两个第一人称视角（F 第一空间 / E 第二空间）里，鼠标左键已经用于转头，
+   若同时响应选面、拖家具、贴材质，一次点击会既转视角又改模型，非常混乱。
+   退出漫游（回到桌面视角）即恢复全部编辑能力。 */
+function editLocked() { return walk.on; }
+
 const orbit = {
   target: new THREE.Vector3(-0.25, 1.22, -1.15),
   radius: 5.4, theta: 0.62, phi: 1.34,          // 当前值（渲染用）
@@ -59794,6 +59800,7 @@ function renderSceneTabs() {
       b.innerHTML = '<b></b>';
       b.querySelector('b').textContent = sc.label;
       b.addEventListener('click', () => {
+        if (editLocked()) { toast('游览中不能切场景，按 F / E 退出后再改'); return; }
         if (switchScene(id)) toast('已切换到「' + sc.label + '」，这套的布置会单独保存');
       });
       host.appendChild(b);
@@ -60918,6 +60925,8 @@ function resolveCollisions(g, maxIter = 20) {
 }
 
 function placeAt(type, x, z, rot) {
+  /* 游览态只读：放家具属编辑，先挡在这里 —— 所有调用路径（卡片拖放、自测除外）都过这关 */
+  if (editLocked()) { lastPlaceError = '游览中不能编辑，按 F / E 退出后再改'; return null; }
   /* 非有限坐标会导致物件位置变 NaN：直接拒绝，不进场景也不进历史 */
   if (!Number.isFinite(x) || !Number.isFinite(z)) {
     lastPlaceError = '坐标无效';
@@ -61622,6 +61631,9 @@ const dragInfo = { x: 0, y: 0, theta: 0, phi: 0, moved: false };
 
 canvasEl.addEventListener('pointerdown', (e) => {
   if (e.button === 2) return;
+  /* 游览态：这一套是编辑用的（选面 / 拖家具 / 绕轨转），
+     整个让开，交给下面漫游专属的 pointerdown 处理转头。 */
+  if (editLocked()) { mode = null; return; }
   try { canvasEl.setPointerCapture(e.pointerId); } catch { /* 合成事件 */ }
   const piece = pickPiece(e);
   if (piece && !e.shiftKey) {
@@ -61677,6 +61689,8 @@ canvasEl.addEventListener('pointermove', (e) => {
     canvasEl.classList.toggle('over-surface', !!s);
     return;
   }
+  /* 游览态不该出现「可点 / 可贴」的手型提示 */
+  if (editLocked()) { highlight(null); canvasEl.style.cursor = 'grab'; return; }
   /* 悬停在署名铭牌上：手型 + 铜面提亮，让人知道这是能点的 */
   if (mode !== 'orbit') {
     const link = pickLink(e);
@@ -61696,6 +61710,7 @@ canvasEl.addEventListener('pointermove', (e) => {
 });
 
 function endDrag(e) {
+  if (editLocked()) { mode = null; canvasEl.classList.remove('dragging'); return; }
   if (mode === 'orbit' && !dragInfo.moved) {
     /* 先看是不是点在署名铭牌上：是就跳转，不回落到选面 */
     const link = pickLink(e);
@@ -61732,6 +61747,7 @@ const ghost = $('#ghost-hint');
 
 function startCardDrag(e, el, cat, id) {
   e.preventDefault();
+  if (editLocked()) { toast('游览中不能编辑，按 F / E 退出后再改'); return; }
   cardDrag.active = true;
   cardDrag.cat = cat;
   cardDrag.id = id;
@@ -61828,6 +61844,7 @@ function toast(msg) {
 const CAT_NAME = { wood: '木', stone: '石', fabric: '织物', paint: '涂料', furniture: '家具' };
 
 function applyToSurface(key, cat, id) {
+  if (editLocked()) { toast('游览中不能换材质，按 F / E 退出后再改'); return; }
   if (!SURFACES[key].cats.includes(cat)) {
     const need = SURFACES[key].cats.map((c) => CAT_NAME[c]).join(' 或 ');
     toast(`${SURFACES[key].name}只能贴${need}`);
@@ -61874,12 +61891,14 @@ function restore(snap) {
   updateMood();
 }
 function undo() {
+  if (editLocked()) { toast('游览中不能撤销，按 F / E 退出后再改'); return; }
   if (undoStack.length < 2) return;
   redoStack.push(undoStack.pop());
   restore(undoStack[undoStack.length - 1]);
   syncTools();
 }
 function redo() {
+  if (editLocked()) { toast('游览中不能重做，按 F / E 退出后再改'); return; }
   if (!redoStack.length) return;
   const s = redoStack.pop();
   undoStack.push(s);
@@ -61939,6 +61958,7 @@ const PRESETS = {
 };
 for (const b of $$('.mood')) {
   b.addEventListener('click', () => {
+    if (editLocked()) { toast('游览中不能换情绪，按 F / E 退出后再改'); return; }
     pushHistory();
     const p = PRESETS[b.dataset.m];
     state.mats = JSON.parse(JSON.stringify(p.mats));
@@ -62007,6 +62027,7 @@ $('#share').addEventListener('click', async () => {
 });
 
 $('#reset').addEventListener('click', () => {
+  if (editLocked()) { toast('游览中不能重置，按 F / E 退出后再改'); return; }
   pushHistory();
   location.hash = '';
   state.mats = {
@@ -62373,8 +62394,8 @@ function enterWalk(space) {
   placeCamera();
   markDirty();
   toast(sp === 'room'
-    ? '公寓漫游 · WASD / 方向键走动 · 拖动转向 · E 退出'
-    : '模型台漫游 · WASD / 方向键走动 · 拖动转向 · F 退出');
+    ? '公寓漫游 · WASD / 方向键走动 · 拖动转向 · 只读 · E 退出'
+    : '模型台漫游 · WASD / 方向键走动 · 拖动转向 · 只读 · F 退出');
 }
 function exitWalk() {
   if (!walk.on) return;
@@ -63000,6 +63021,63 @@ if (location.search.includes('selftest')) {
       ? `ok(room y=${roomY.toFixed(2)} 移动/${roomClamp ? '夹墙' : ''} model y=${modelY.toFixed(2)})`
       : `FAIL(roomWorld=${roomWorld},tag=${roomTag},clamp=${roomClamp},moved=${roomMoved},modelScaled=${modelScaled},modelTag=${modelTag},distinct=${distinct},exit=${exited},fov=${fovBack})`;
   });
+  /* v13.8：游览态禁止编辑。进入 F / E 后 placeAt / 贴材质 / 撤销都要拒绝，
+     退出后全部恢复。用底层函数直接验证，不依赖异步事件。 */
+  step('editLockedInTour', () => {
+    const savedFov = camera.fov;
+    const savedWalk = { on: walk.on, space: walk.space, x: walk.x, z: walk.z,
+      yaw: walk.yaw, pitch: walk.pitch, velX: walk.velX, velZ: walk.velZ,
+      savedFov: walk.savedFov };
+    const savedPieces = PIECES.children.length;
+    const savedMat = JSON.stringify(state.mats);
+
+    /* 桌面态：允许编辑（放一件再撤掉，不改变最终状态） */
+    const offLocked = editLocked();
+    const g0 = placeAt('bench', 1.1, 0.7, 0);
+    const desktopAllowed = !!g0;
+    if (g0) { g0.removeFromParent(); }
+
+    /* 第一空间：全部拒绝 */
+    enterWalk('model');
+    const modelLocked = editLocked();
+    const m1 = placeAt('bench', 1.1, 0.7, 0);
+    const beforeMat = JSON.stringify(state.mats);
+    applyToSurface('floor', 'wood', 'walnut');
+    const matUnchanged = JSON.stringify(state.mats) === beforeMat;
+    const beforeUndo = undoStack.length;
+    undo(); redo();
+    const undoUnchanged = undoStack.length === beforeUndo;
+    const modelRejected = m1 === null && matUnchanged && undoUnchanged;
+
+    /* 第二空间：同样拒绝 */
+    enterWalk('room');
+    const roomLocked = editLocked();
+    const m2 = placeAt('bench', 1.1, 0.7, 0);
+    const roomRejected = m2 === null;
+
+    /* 退出：恢复编辑 */
+    exitWalk();
+    const afterExit = editLocked();
+    const g1 = placeAt('bench', 1.1, 0.7, 0);
+    const restored = !!g1;
+    if (g1) { g1.removeFromParent(); }
+
+    /* 恢复全部状态 */
+    Object.assign(walk, savedWalk);
+    document.body.classList.toggle('walking', savedWalk.on);
+    if (savedWalk.on) document.body.dataset.walkSpace = savedWalk.space;
+    else delete document.body.dataset.walkSpace;
+    camera.fov = savedFov; camera.updateProjectionMatrix();
+    placeCamera();
+    const piecesBack = PIECES.children.length === savedPieces;
+    const matsBack = JSON.stringify(state.mats) === savedMat;
+
+    const ok = !offLocked && desktopAllowed && modelLocked && modelRejected
+      && roomLocked && roomRejected && !afterExit && restored
+      && piecesBack && matsBack;
+    return ok ? 'ok(桌面可编辑/两漫游只读/退出恢复)'
+      : `FAIL(off=${offLocked},desktop=${desktopAllowed},mLock=${modelLocked},mRej=${modelRejected},rLock=${roomLocked},rRej=${roomRejected},after=${afterExit},restored=${restored},pieces=${piecesBack},mats=${matsBack})`;
+  });
   /* 只有滚轮半径走阻尼（它不参与拾取）；theta/phi 必须始终同步 */
   step('wheelDampingOnly', () => {
     resetCam();
@@ -63029,6 +63107,7 @@ if (location.search.includes('probe')) {
   window.__orbit = orbit;
   window.__orbitGoal = orbitGoal;
   window.__placeCamera = placeCamera;
+  window.__editLocked = editLocked;
   window.__placeAt = (t,x,z,r) => placeAt(t,x,z,r);
   window.__syncPieces = syncPieces;
   window.__pieces = PIECES;
