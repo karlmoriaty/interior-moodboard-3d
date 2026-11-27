@@ -670,8 +670,8 @@ kbd,code{
   <p><b>光。</b>右侧那根竖线就是一天：往上拉是清晨，往下拉是深夜。太阳的角度、颜色和整个房间的亮度都跟着它走，天黑以后灯会自动亮。</p>
   <p><b>读数。</b>左边三个数是这间房此刻的脾气。<b>亮</b>来自浅色表面和天光，<b>暖</b>来自暖色材料和低角度的光，<b>静</b>来自深色表面和一小片灯光。它们只是参考，多数房间是三样混着的。</p>
   <p><b>视角。</b>左键拖动绕着屋子转，即时跟手、松手即停，这样转完就能直接点面或拖家具。滚轮平滑拉近拉远。按住<kbd>↑</kbd><kbd>↓</kbd><kbd>←</kbd><kbd>→</kbd>可以在房间里挪动观察位置（左右横移、上下升降），范围有限不会穿墙。按 <kbd>R</kbd> 回到默认视角。</p>
-  <p><b>走进去。</b>按 <kbd>F</kbd>，相机会降到人的高度，直接站在这间屋里——此时用 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 或方向键前后左右走动，按住左键拖动可以转头看四周。走到墙边会停住，不会穿出去。再按一次 <kbd>F</kbd> 回到模型台外面。</p>
-  <p class="keys">快捷键：<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 换情绪 · <kbd>[</kbd><kbd>]</kbd> 拨时间 · <kbd>F</kbd> 进出漫游 · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销 · <kbd>R</kbd> 回到默认视角 · 方向键挪动视角 · 焦点在时间轴上时上下键仍拨时间</p>
+  <p><b>两个空间。</b>这里其实是"房间里的房间"：你站着的这间大屋是<b>公寓</b>，桌上那个缩小的模型是<b>模型台</b>。按 <kbd>E</kbd> 在这间公寓里走动——人眼高度，能走到窗边、看桌上的模型、摸到墙；按 <kbd>F</kbd> 则钻进桌上的模型台，在微缩房间里走动。两种视角下都用 <kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> 或方向键前后左右移动，按住左键拖动转头。走到墙边会停住。再按一次同一个键退回桌面视角，按另一个键可在两个空间之间直接切换。</p>
+  <p class="keys">快捷键：<kbd>1</kbd><kbd>2</kbd><kbd>3</kbd> 换情绪 · <kbd>[</kbd><kbd>]</kbd> 拨时间 · <kbd>E</kbd> 公寓漫游 · <kbd>F</kbd> 模型台漫游 · <kbd>Ctrl</kbd>+<kbd>Z</kbd> 撤销 · <kbd>R</kbd> 回到默认视角 · 方向键挪动视角 · 焦点在时间轴上时上下键仍拨时间</p>
   <p class="keys">画面经过电影级后期：亮部辉光、ACES 色调映射、暗角与胶片颗粒。加 <code>?nopost=1</code> 可关闭后期作对照。</p>
 </dialog>
 
@@ -55969,20 +55969,24 @@ const camera = new THREE.PerspectiveCamera(42, window.innerWidth / window.innerH
    主体仍占约 26%，挂画、边柜、矮凳、整面高窗都完整入画；拉到 6.2 主体又缩成小摆件。
    phi 越大相机越低：层高提到 3.9 后 phi 1.34 机位约 2.4 m，既不吃天花黑带，
    俯角也够看清模型台内部。 */
-/* ---- 房间内漫游（v13.6）----
-   第一人称进入模型内部：坐标用房间局部米（和家具同一套），
-   渲染时再乘 MODEL_SCALE 加到模型台的位置上。
-   这样「走两米」就是走过两米的房间距离，与家具尺寸天然一致。 */
+/* ---- 两个空间的第一人称漫游（v13.7）----
+   空间是嵌套的：
+     第一空间 = 桌上的微缩模型（MODEL，内部 8×6 坐标，缩放 0.22）
+     第二空间 = 真实公寓（地板 11.4×10.2，墙界 ROOM_BOUNDS，层高 3.9）
+   F 进第一空间，E 进第二空间。
+   walk.x/z 的含义随 space 变：model = 模型局部米；room = 世界米。
+   eye 恒为 1.62 米，在 model 里也要缩放到模型尺度，在 room 里直接用。 */
 const walk = {
   on: false,
-  x: 0,            // 房间局部 X（米）
-  z: 2.1,          // 局部 Z：从前墙附近起步，正对窗户
+  space: 'model',  // 'model' 第一空间 | 'room' 第二空间
+  x: 0,
+  z: 2.1,
   yaw: 0,          // 0 = 面朝 -Z（朝窗）；顺时针为正
   pitch: 0,
   velX: 0,
   velZ: 0,
-  eye: 1.62,       // 眼高（局部米）
-  fov: 62,         // 漫游时的视场角，比外部略广
+  eye: 1.62,       // 眼高（米，两空间都是真人尺度再按需缩放）
+  fov: 62,
   savedFov: 0,
 };
 
@@ -56083,15 +56087,21 @@ const RADIUS_LAMBDA = 12;      // 滚轮推拉平滑（与拾取无关，保留�
 const dampK = (lambda, dt) => 1 - Math.exp(-lambda * dt);
 
 function placeCamera() {
-  /* 漫游模式：相机放在房间内部，按局部分米算好再缩放 */
+  /* 漫游模式：按所处空间换算相机世界坐标 */
   if (walk.on) {
-    const s2 = MODEL_SCALE;
     const cp = Math.cos(walk.pitch);
-    camera.position.set(
-      walk.x * s2,
-      walk.eye * s2 + MODEL_BASE_Y,
-      walk.z * s2 + TABLE.z,
-    );
+    if (walk.space === 'room') {
+      /* 第二空间：真实公寓，walk.x/z 就是世界米，眼高直接 1.62 */
+      camera.position.set(walk.x, walk.eye, walk.z);
+    } else {
+      /* 第一空间：桌上微缩模型，局部米要缩放并加桌面偏移 */
+      const s2 = MODEL_SCALE;
+      camera.position.set(
+        walk.x * s2,
+        walk.eye * s2 + MODEL_BASE_Y,
+        walk.z * s2 + TABLE.z,
+      );
+    }
     /* 朝向：yaw=0 看向 -Z（窗），pitch 抬头为正 */
     camera.lookAt(
       camera.position.x - Math.sin(walk.yaw) * cp,
@@ -62028,11 +62038,19 @@ window.addEventListener('keydown', (e) => {
      事件也可能派发到 window/document，此时 target 不是 Node，contains 会抛错。 */
   const onRail = e.target === rail
     || (e.target instanceof Node && rail && rail.contains(e.target));
-  /* v13.6：漫游切换要独立判断 —— 之前写进 PAN_KEYS 分支里，
-     而 f 不在方向键集合中，那段代码永远不会执行。 */
+  /* v13.7：F = 第一空间（模型台），E = 第二空间（真实公寓）。
+     同一空间再按一次退出，不同空间直接切。
+     独立判断，不能塞进 PAN_KEYS 分支（f/e 不在方向键集合里）。 */
   if (e.key === 'f' || e.key === 'F') {
     e.preventDefault();
-    walk.on ? exitWalk() : enterWalk();
+    if (walk.on && walk.space === 'model') exitWalk();
+    else enterWalk('model');
+    return;
+  }
+  if (e.key === 'e' || e.key === 'E') {
+    e.preventDefault();
+    if (walk.on && walk.space === 'room') exitWalk();
+    else enterWalk('room');
     return;
   }
   if (PAN_KEYS.has(e.key) && !onRail) {
@@ -62288,9 +62306,11 @@ renderer.setAnimationLoop(frameStep);
    加速度用和 orbit.pan 同一套阻尼，手感一致。
    碰撞只做墙体（内缩 WALK_MARGIN），家具不挡 —— 房间本来就不大，
    家具的包围盒会把可行走区切得很碎，反而不如让人穿过去。 */
-const WALK_SPEED = 1.65;      // 米/秒（局部）
+const WALK_SPEED = 1.65;      // 第二空间：世界米/秒
+const WALK_SPEED_MODEL = WALK_SPEED * MODEL_SCALE;  // 第一空间：视觉速度对齐
 const WALK_ACCEL = 11;
-const WALK_MARGIN = 0.34;     // 离墙最小距离
+const WALK_MARGIN = 0.34;     // 第一空间离墙（局部米）
+const WALK_MARGIN_ROOM = WALL_MARGIN + 0.15;        // 第二空间离墙（世界米，留大点）
 function walkStep(dt) {
   if (!walk.on) return false;
   const keys = heldPanKeys;
@@ -62302,10 +62322,11 @@ function walkStep(dt) {
   /* 斜向不该更快 */
   const n = Math.hypot(fwd, side) || 1;
   const f = fwd / n, sd = side / n;
+  const speed = walk.space === 'room' ? WALK_SPEED : WALK_SPEED_MODEL;
   /* 前方向 = (-sin yaw, -cos yaw)；右方向 = (cos yaw, -sin yaw) */
   const sy = Math.sin(walk.yaw), cy = Math.cos(walk.yaw);
-  const wantX = (-sy * f + cy * sd) * WALK_SPEED;
-  const wantZ = (-cy * f - sy * sd) * WALK_SPEED;
+  const wantX = (-sy * f + cy * sd) * speed;
+  const wantZ = (-cy * f - sy * sd) * speed;
   const k = Math.min(1, WALK_ACCEL * dt);
   walk.velX += (wantX - walk.velX) * k;
   walk.velZ += (wantZ - walk.velZ) * k;
@@ -62313,27 +62334,47 @@ function walkStep(dt) {
   if (!moving && !fwd && !side) { walk.velX = 0; walk.velZ = 0; return false; }
   walk.x += walk.velX * dt;
   walk.z += walk.velZ * dt;
-  /* 墙体夹紧 */
-  walk.x = Math.max(RB_X0 + WALK_MARGIN, Math.min(RB_X1 - WALK_MARGIN, walk.x));
-  walk.z = Math.max(RB_Z0 + WALK_MARGIN, Math.min(RB_Z1 - WALK_MARGIN, walk.z));
+  /* 墙体夹紧：第二空间用真实房间边界，第一空间用模型局部边界 */
+  if (walk.space === 'room') {
+    const limX = ROOM_BOUNDS.halfW - WALK_MARGIN_ROOM;
+    const zHi = ROOM_BOUNDS.frontZ - WALK_MARGIN_ROOM;
+    const zLo = ROOM_BOUNDS.backZ + WALK_MARGIN_ROOM;
+    walk.x = Math.max(-limX, Math.min(limX, walk.x));
+    walk.z = Math.max(zLo, Math.min(zHi, walk.z));
+  } else {
+    walk.x = Math.max(RB_X0 + WALK_MARGIN, Math.min(RB_X1 - WALK_MARGIN, walk.x));
+    walk.z = Math.max(RB_Z0 + WALK_MARGIN, Math.min(RB_Z1 - WALK_MARGIN, walk.z));
+  }
   return true;
 }
 
-/* 进入 / 退出漫游 */
-function enterWalk() {
-  if (walk.on) return;
+/* 进入 / 退出漫游。space='model' 第一空间(F)，'room' 第二空间(E) */
+function enterWalk(space) {
+  const sp = space === 'room' ? 'room' : 'model';
+  const switching = walk.on && walk.space !== sp;
+  if (walk.on && !switching) return;
+  if (!walk.on) walk.savedFov = camera.fov;
   walk.on = true;
-  walk.savedFov = camera.fov;
+  walk.space = sp;
   camera.fov = walk.fov;
   camera.updateProjectionMatrix();
-  /* 从当前视角的反方向起步：面朝窗 */
-  walk.x = 0.2; walk.z = RB_Z1 - 1.1;
-  walk.yaw = 0; walk.pitch = -0.04;
+  /* 起步点：room 站在桌前看窗；model 沿用原来的微缩房间起点 */
+  if (sp === 'room') {
+    walk.x = 0; walk.z = 3.6;        // 世界米，离桌子远一点，房间整体入画
+    walk.yaw = 0; walk.pitch = -0.06;
+  } else {
+    walk.x = 0.2; walk.z = RB_Z1 - 1.1;
+    walk.yaw = 0; walk.pitch = -0.04;
+  }
   walk.velX = 0; walk.velZ = 0;
+  heldPanKeys.clear();
   document.body.classList.add('walking');
+  document.body.dataset.walkSpace = sp;
   placeCamera();
   markDirty();
-  toast('漫游中 · WASD / 方向键移动 · 拖动转向 · F 退出');
+  toast(sp === 'room'
+    ? '公寓漫游 · WASD / 方向键走动 · 拖动转向 · E 退出'
+    : '模型台漫游 · WASD / 方向键走动 · 拖动转向 · F 退出');
 }
 function exitWalk() {
   if (!walk.on) return;
@@ -62341,6 +62382,7 @@ function exitWalk() {
   camera.fov = walk.savedFov || 50;
   camera.updateProjectionMatrix();
   document.body.classList.remove('walking');
+  delete document.body.dataset.walkSpace;
   placeCamera();
   markDirty();
   toast('已退出漫游');
@@ -62902,6 +62944,61 @@ if (location.search.includes('selftest')) {
     return moved > 0.02 && drift < 1e-6
       ? `ok(${moved.toFixed(2)}m,drift=${drift.toFixed(6)})`
       : `FAIL(moved=${moved.toFixed(3)},drift=${drift.toFixed(6)})`;
+  });
+  /* v13.7：两个空间的漫游坐标换算。
+     第二空间 = 真实公寓，眼高 1.62 世界米，边界 ROOM_BOUNDS；
+     第一空间 = 桌上微缩模型，眼高 1.62*0.22 再加桌面偏移。 */
+  step('walkSpaces', () => {
+    const savedFov = camera.fov;
+    const savedWalk = { on: walk.on, space: walk.space, x: walk.x, z: walk.z,
+      yaw: walk.yaw, pitch: walk.pitch, velX: walk.velX, velZ: walk.velZ,
+      savedFov: walk.savedFov };
+
+    /* --- 第二空间 --- */
+    enterWalk('room');
+    placeCamera();
+    const roomY = camera.position.y;
+    const roomWorld = Math.abs(roomY - walk.eye) < 1e-6;   // 1.62，不缩放
+    const roomTag = document.body.dataset.walkSpace === 'room';
+    /* 边界：往一个方向猛走 200 帧，不能越出 ROOM_BOUNDS */
+    heldPanKeys.clear(); heldPanKeys.add('w');
+    for (let i = 0; i < 200; i++) walkStep(0.05);
+    heldPanKeys.clear();
+    const zHi = ROOM_BOUNDS.frontZ - WALK_MARGIN_ROOM;
+    const zLo = ROOM_BOUNDS.backZ + WALK_MARGIN_ROOM;
+    const limX = ROOM_BOUNDS.halfW - WALK_MARGIN_ROOM;
+    const roomClamp = walk.z >= zLo - 1e-6 && walk.z <= zHi + 1e-6
+      && Math.abs(walk.x) <= limX + 1e-6;
+    const roomMoved = walk.z < 2.4 - 0.5;   // 确实往前走了
+
+    /* --- 第一空间（对照）--- */
+    enterWalk('model');
+    placeCamera();
+    const modelY = camera.position.y;
+    const expectModelY = walk.eye * MODEL_SCALE + MODEL_BASE_Y;
+    const modelScaled = Math.abs(modelY - expectModelY) < 1e-6;
+    const modelTag = document.body.dataset.walkSpace === 'model';
+    /* 两空间相机高度必须不同，否则就是同一套 */
+    const distinct = Math.abs(roomY - modelY) > 0.1;
+
+    /* --- 退出恢复 --- */
+    exitWalk();
+    const exited = !walk.on && !document.body.dataset.walkSpace;
+    const fovBack = Math.abs(camera.fov - savedFov) < 1e-6;
+
+    /* 恢复状态 */
+    Object.assign(walk, savedWalk);
+    document.body.classList.toggle('walking', savedWalk.on);
+    if (savedWalk.on) document.body.dataset.walkSpace = savedWalk.space;
+    else delete document.body.dataset.walkSpace;
+    camera.fov = savedFov; camera.updateProjectionMatrix();
+    placeCamera();
+
+    const ok = roomWorld && roomTag && roomClamp && roomMoved
+      && modelScaled && modelTag && distinct && exited && fovBack;
+    return ok
+      ? `ok(room y=${roomY.toFixed(2)} 移动/${roomClamp ? '夹墙' : ''} model y=${modelY.toFixed(2)})`
+      : `FAIL(roomWorld=${roomWorld},tag=${roomTag},clamp=${roomClamp},moved=${roomMoved},modelScaled=${modelScaled},modelTag=${modelTag},distinct=${distinct},exit=${exited},fov=${fovBack})`;
   });
   /* 只有滚轮半径走阻尼（它不参与拾取）；theta/phi 必须始终同步 */
   step('wheelDampingOnly', () => {
