@@ -2308,6 +2308,10 @@ const aptArt = new THREE.Mesh(
 aptArt.position.set(-APT.halfW + 0.06, 1.85, -1.6);
 scene.add(aptArt);
 
+/* 后墙横画的画框：原本在下面那个块作用域里，v13.9 要拿它做 GitHub 链接位，
+   提到模块级，块内只是赋值。 */
+let aptBackFrame = null;
+
 /* ============================== 3.8 后墙与右墙补全 ============================== */
 /* 之前这个房间只做了窗墙(z=-4.9)、左右侧墙、天花与地板，
    z=+5.1 那一面完全空缺。相机一旦绕到后方，看到的是城市圆柱的背面，
@@ -2447,6 +2451,7 @@ scene.add(aptArt);
   back3Frame.position.set(-3.35, 1.86, BZ - 0.045);
   back3Frame.castShadow = true;
   add(back3Frame);
+  aptBackFrame = back3Frame;   // 供模块级 LINK_SPOTS 注册用
   const back3Art = new THREE.Mesh(new THREE.PlaneGeometry(2.00, 1.21), back3Mat);
   back3Art.rotation.y = Math.PI;
   back3Art.position.set(-3.35, 1.86, BZ - 0.075);
@@ -2781,6 +2786,19 @@ const roomSigns = [];
   MODEL.add(p);
   roomSigns.push(p);
   LINK_SPOTS.push({ mesh: p, url: 'https://github.com/karlmoriaty', label: '在 GitHub 上看 karlmoriaty' });
+}
+
+/* v13.9：身后两幅画的画框也挂 GitHub 链接。
+   竖幅（左墙武士）aptArt 是一个多材质 Box：+X 面是画心、其余五面是深木画框；
+   横幅（后墙月光竹林）back3Frame 是独立画框、back3Art 是画心。
+   pickLink 只对这里注册的 mesh 做射线检测，所以画面本身不挡画框的命中。 */
+for (const [mesh, name] of [[aptArt, 'artFrame-left'], [aptBackFrame, 'artFrame-back']]) {
+  mesh.name = name;
+  LINK_SPOTS.push({
+    mesh,
+    url: 'https://github.com/karlmoriaty',
+    label: '在 GitHub 上看 karlmoriaty',
+  });
 }
 
 /* ② 縁側台上的小立牌：立在台右端、朝房间内侧微侧，像展厅的作品标签。
@@ -6947,13 +6965,14 @@ function exitWalk() {
 let walkDrag = null;
 canvasEl.addEventListener('pointerdown', (e) => {
   if (!walk.on) return;
-  walkDrag = { x: e.clientX, y: e.clientY };
+  walkDrag = { x: e.clientX, y: e.clientY, moved: false };
   canvasEl.setPointerCapture && canvasEl.setPointerCapture(e.pointerId);
 });
 canvasEl.addEventListener('pointermove', (e) => {
   if (!walk.on || !walkDrag) return;
   const dx = e.clientX - walkDrag.x;
   const dy = e.clientY - walkDrag.y;
+  if (Math.abs(dx) + Math.abs(dy) > 3) walkDrag.moved = true;
   walkDrag.x = e.clientX;
   walkDrag.y = e.clientY;
   walk.yaw += dx * 0.0032;
@@ -6961,7 +6980,18 @@ canvasEl.addEventListener('pointermove', (e) => {
   placeCamera();
   needsRender = true;
 });
-canvasEl.addEventListener('pointerup', () => { walkDrag = null; });
+canvasEl.addEventListener('pointerup', (e) => {
+  /* 漫游里没拖动 = 点了一下：画框也是可点的署名位，跳 GitHub。
+     拖动过的算转头，不触发跳转 —— 和桌面态 endDrag 的判定一致。 */
+  if (walk.on && walkDrag && !walkDrag.moved) {
+    const link = pickLink(e);
+    if (link) {
+      window.open(link.url, '_blank', 'noopener');
+      toast(`打开 ${link.url.replace('https://', '')}`);
+    }
+  }
+  walkDrag = null;
+});
 canvasEl.addEventListener('pointercancel', () => { walkDrag = null; });
 
 /* 交互后手动标脏 */
@@ -7263,7 +7293,7 @@ if (location.search.includes('selftest')) {
   /* 署名铭牌：两块都在场、坐标在场景内、链接正确、能被射线拾取到。
      拾取必须在屏幕上的实际位置试，不能拿世界坐标冒充。 */
   step('signPlates', () => {
-    if (LINK_SPOTS.length !== 5) return `FAIL(count=${LINK_SPOTS.length})`;
+    if (LINK_SPOTS.length !== 7) return `FAIL(count=${LINK_SPOTS.length})`;
     /* 三处新署名和桌面那块指向同一个仓库，所以按集合去重后应仍只有 2 个不同链接 */
     const urls = [...new Set(LINK_SPOTS.map((s) => s.url))].sort().join('|');
     const want = 'https://github.com/karlmoriaty|https://x.com/karlmoriaty';
@@ -7283,7 +7313,7 @@ if (location.search.includes('selftest')) {
       const got = pickLink({ clientX: cx, clientY: cy });
       return got && got.mesh === s.mesh;
     });
-    return hitOk ? 'ok(2 plates, clickable, urls)' : 'FAIL(pick or offscreen)';
+    return hitOk ? 'ok(' + LINK_SPOTS.length + ' spots, clickable, urls)' : 'FAIL(pick or offscreen)';
   });
   /* 电影级后处理：必须先跑一次 renderFrame()，uniform 才会绑定到 RT。
      检查链路接通、RT 已建、参数有效、失败能回退。 */
@@ -7642,6 +7672,7 @@ if (location.search.includes('probe')) {
   window.__orbitGoal = orbitGoal;
   window.__placeCamera = placeCamera;
   window.__editLocked = editLocked;
+  window.__pickLink = pickLink;
   window.__placeAt = (t,x,z,r) => placeAt(t,x,z,r);
   window.__syncPieces = syncPieces;
   window.__pieces = PIECES;
